@@ -31,7 +31,7 @@ class CultureGuideApp(App):
     def refresh_city(self, city_id):
         places = self.db.list_places(city_id)
         self.object_count = len(places)
-        self.root.ids.place_list.data = [{"text":p["name"],"category":p["category"],"place_id":p["id"]} for p in places]
+        self.root.ids.city_list.data = [{"text":c["name"] + ", " + c["country"], "city_id":c["id"]} for c in self.db.list_cities()]\n        self.root.ids.place_list.data = [{"text":p["name"],"category":p["category"],"place_id":p["id"]} for p in places]
         self.root.ids.city_map.set_places(places)
         self.root.ids.metro.set_lines(build_metro_lines(places))
         self.status_text = f"{len(places)} объектов"
