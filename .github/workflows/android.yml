@@ -6,6 +6,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-22.04
+    env:
+      JAVA_HOME: /usr/lib/jvm/temurin-17-jdk-amd64
+      GRADLE_OPTS: -Dorg.gradle.java.home=/usr/lib/jvm/temurin-17-jdk-amd64
     steps:
       - uses: actions/checkout@v4
 
