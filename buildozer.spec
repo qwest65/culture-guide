@@ -12,9 +12,9 @@ android.minapi = 23
 android.archs = arm64-v8a, armeabi-v7a
 android.allow_backup = True
 android.accept_sdk_license = True
-requirements = python3==3.12.8,hostpython3==3.12.8,kivy==2.3.0
+requirements = python3==3.11.6,hostpython3==3.11.6,kivy==2.3.0
 android.permissions = INTERNET,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION
-p4a.branch = master
+p4a.branch = 2026.5.9
 
 [buildozer]
 log_level = 2
