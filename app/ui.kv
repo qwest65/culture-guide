@@ -87,14 +87,14 @@ BoxLayout:
         size_hint_y: None
         height: "28dp"
 
-<CityRow@ButtonBehavior+Label>:
+<CityRow>:
     text: root.text
     city_id: ""
     size_hint_y: None
     height: "42dp"
     on_release: app.select_city(root.city_id)
 
-<PlaceRow@ButtonBehavior+Label>:
+<PlaceRow>:
     text: root.text + "\n" + root.category
     place_id: ""
     size_hint_y: None
