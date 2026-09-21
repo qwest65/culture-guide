@@ -2,11 +2,11 @@ from pathlib import Path
 from kivy.app import App
 from kivy.clock import Clock
 from kivy.lang import Builder
-from kivy.properties import StringProperty, NumericProperty
+from kivy.properties import StringProperty, NumericProperty\nfrom kivy.uix.behaviors import ButtonBehavior\nfrom kivy.uix.label import Label
 from app.database import Database
 from app.routes import build_tour, build_metro_lines
 
-KV = Path(__file__).parent.joinpath("app", "ui.kv").read_text(encoding="utf-8")
+class CityRow(ButtonBehavior, Label):\n    city_id = StringProperty("")\n\nclass PlaceRow(ButtonBehavior, Label):\n    place_id = StringProperty("")\n\nKV = Path(__file__).parent.joinpath("app", "ui.kv").read_text(encoding="utf-8")
 
 class CultureGuideApp(App):
     city_name = StringProperty("")
