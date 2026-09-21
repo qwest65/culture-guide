@@ -1,5 +1,5 @@
 #:import OfflineCityMap app.offline_map.OfflineCityMap
-
+#:import MetroWidget app.widgets.MetroWidget
 BoxLayout:
     orientation: "vertical"
     BoxLayout:
@@ -21,7 +21,6 @@ BoxLayout:
             text: str(app.object_count) + " объектов"
             size_hint_x: None
             width: "90dp"
-
     BoxLayout:
         size_hint_y: None
         height: "48dp"
@@ -36,7 +35,6 @@ BoxLayout:
             size_hint_x: None
             width: "100dp"
             on_release: app.make_tour()
-
     BoxLayout:
         padding: "7dp"
         spacing: "7dp"
@@ -81,29 +79,16 @@ BoxLayout:
                 readonly: True
                 font_size: "11sp"
                 size_hint_y: .35
-
     Label:
         text: app.status_text
         size_hint_y: None
         height: "28dp"
-
 <CityRow>:
     text: root.text
-    city_id: ""
     size_hint_y: None
     height: "42dp"
     on_release: app.select_city(root.city_id)
-
 <PlaceRow>:
     text: root.text + "\n" + root.category
-    place_id: ""
     size_hint_y: None
     height: "46dp"
-
-<MetroWidget@Widget>:
-    canvas:
-        Color:
-            rgba: .98,.98,.99,1
-        Rectangle:
-            pos: self.pos
-            size: self.size
