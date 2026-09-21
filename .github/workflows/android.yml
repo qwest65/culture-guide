@@ -26,10 +26,22 @@ jobs:
           python -m pip install --upgrade pip setuptools
           python -m pip install buildozer==1.6.0 cython==0.29.34
 
+      - name: Clean Android build state
+        run: |
+          rm -rf .buildozer bin
+          rm -rf ~/.buildozer/android/platform/python-for-android
+          rm -rf ~/.buildozer/android/platform/build-*
+
       - name: Build APK
         run: buildozer android debug
+
+      - name: Verify APK
+        run: |
+          ls -lh bin/*.apk
+          file bin/*.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: culture-guide-apk
           path: bin/*.apk
+          if-no-files-found: error
