@@ -14,7 +14,7 @@ android.allow_backup = True
 android.accept_sdk_license = True
 requirements = python3==3.11.6,hostpython3==3.11.6,kivy==2.3.0
 android.permissions = INTERNET,ACCESS_FINE_LOCATION,ACCESS_COARSE_LOCATION
-p4a.branch = 2026.5.9
+p4a.branch = v2026.05.09
 
 [buildozer]
 log_level = 2
