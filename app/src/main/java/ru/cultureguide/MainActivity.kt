@@ -341,7 +341,7 @@ class MainActivity:Activity(){
     val results=response.collection.children.mapNotNull{item->
      val obj=item.obj ?: return@mapNotNull null
      val point=obj.geometry.firstOrNull()?.point ?: return@mapNotNull null
-     Triple(obj,point)
+     obj to point
     }.take(10)
     if(results.isEmpty()){Toast.makeText(this@MainActivity,"Объекты не найдены",Toast.LENGTH_LONG).show();return}
     val labels=results.map{(obj,point)->(obj.name?:"Без названия")+" · %.5f, %.5f".format(java.util.Locale.US,point.latitude,point.longitude)}
