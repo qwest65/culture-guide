@@ -134,114 +134,61 @@ class MetroView(c:Context):View(c){
  var route:List<Place> = emptyList()
  var lines:List<RouteLine> = emptyList()
  var selectedLineId:Long?=null
- private val p=Paint(1)
- private val colors=intArrayOf(
-  Color.rgb(49,94,251),Color.rgb(235,87,87),Color.rgb(39,174,96),
-  Color.rgb(155,89,182),Color.rgb(242,153,74)
- )
+ private val p=Paint(Paint.ANTI_ALIAS_FLAG)
+ private val colors=intArrayOf(Color.rgb(49,94,251),Color.rgb(235,87,87),Color.rgb(39,174,96),Color.rgb(155,89,182),Color.rgb(242,153,74))
+ private fun shortName(name:String):String{
+  val clean=name.replace("Троицкий ","").replace("Памятник ","")
+  return if(clean.length>20)clean.take(18)+"…" else clean
+ }
  override fun onDraw(c:Canvas){
   super.onDraw(c)
-  // Keep the Yandex map visible underneath the schematic.
-  p.style=Paint.Style.FILL
-  p.color=Color.argb(205,255,255,255)
-  c.drawRoundRect(8f,8f,width.toFloat()-8f,height.toFloat()-8f,18f,18f,p)
-  if(places.isEmpty()||lines.isEmpty())return
+  p.style=Paint.Style.FILL;p.color=Color.argb(238,255,255,255);c.drawRoundRect(8f,8f,width.toFloat()-8f,height.toFloat()-8f,18f,18f,p)
+  if(lines.isEmpty())return
+  val ranks=HashMap<Long,MutableList<Int>>()
+  var maxRank=0
+  for(line in lines)for((i,id) in line.placeIds.withIndex()){ranks.getOrPut(id){mutableListOf()}.add(i);maxRank=max(maxRank,i)}
+  val xById=HashMap<Long,Float>()
+  val left=70f;val right=(width-70f).coerceAtLeast(left+1f);val usable=(right-left)
+  for((id,rs) in ranks){val avg=rs.average();xById[id]=left+if(maxRank==0)0.5f else avg/maxRank.toFloat()*usable}
+  val top=48f;val legendH=if(lines.size<=2)54f else 76f
+  val bottom=(height-legendH).coerceAtLeast(top+40f)
+  val laneGap=if(lines.size<=1)0f else (bottom-top)/(lines.size-1).toFloat()
+  val pos=HashMap<Long,PointF>()
+  for((li,line) in lines.withIndex())for(id in line.placeIds){val x=xById[id]?:continue;pos[id]=PointF(x,top+li*laneGap)}
+  // Grid and route lines.
+  for((li,line) in lines.withIndex()){
+   val y=top+li*laneGap
+   p.style=Paint.Style.STROKE;p.strokeCap=Paint.Cap.ROUND;p.strokeJoin=Paint.Join.ROUND
+   p.strokeWidth=if(line.id==selectedLineId)14f else 9f;p.color=colors[li%colors.size]
+   var previous:PointF?=null
+   for(id in line.placeIds){
+    val q=pos[id]?:continue
+    val a=previous
+    if(a!=null){val bend=(a.x+q.x)/2f;c.drawLine(a.x,a.y,bend,a.y,p);c.drawLine(bend,a.y,bend,q.y,p);c.drawLine(bend,q.y,q.x,q.y,p)}
+    previous=q
+   }
+  }
+  // Station nodes. A transfer is a single shared node across lines.
   val byId=places.associateBy{it.id}
-  val positions=HashMap<Long,PointF>()
-  val laneStep=if(lines.size<=1)0f else (height-100f)/(lines.size-1).toFloat()
-  val left=55f
-  val right=(width-55f).coerceAtLeast(left+1f)
-  val top=45f
-
-  for((lineIndex,line) in lines.withIndex()){
-   val count=line.placeIds.size
-   if(count==0)continue
-   for((stationIndex,id) in line.placeIds.withIndex()){
-    val x=if(count==1)(left+right)/2f else left+(right-left)*stationIndex.toFloat()/(count-1).toFloat()
-    val y=top+lineIndex.toFloat()*laneStep
-    val old=positions[id]
-    if(old==null)positions[id]=PointF(x,y)
-    else positions[id]=PointF((old.x+x)/2f,(old.y+y)/2f)
-   }
-  }
-
-  // Faint guide lanes.
-  p.style=Paint.Style.STROKE
-  p.strokeWidth=1f
-  p.color=Color.rgb(232,234,238)
-  for(i in lines.indices){
-   val y=top+i.toFloat()*laneStep
-   c.drawLine(left,y,right,y,p)
-  }
-
-  // Route strokes. Transfers use short orthogonal connectors.
-  for((index,line) in lines.withIndex()){
-   val pts=line.placeIds.mapNotNull{positions[it]}
-   if(pts.size<2)continue
-   p.style=Paint.Style.STROKE
-   p.strokeWidth=if(line.id==selectedLineId)14f else 9f
-   p.strokeCap=Paint.Cap.ROUND
-   p.strokeJoin=Paint.Join.ROUND
-   p.color=colors[index%colors.size]
-   for(i in 1 until pts.size){
-    val a=pts[i-1]
-    val b=pts[i]
-    if(kotlin.math.abs(a.y-b.y)<3f){
-     c.drawLine(a.x,a.y,b.x,b.y,p)
-    }else{
-     val mid=(a.x+b.x)/2f
-     c.drawLine(a.x,a.y,mid,a.y,p)
-     c.drawLine(mid,a.y,mid,b.y,p)
-     c.drawLine(mid,b.y,b.x,b.y,p)
-    }
-   }
-  }
-
-  // Stations and transfer rings.
-  for((index,place) in places.withIndex()){
-   val q=positions[place.id]?:continue
-   val transfer=lines.count{place.id in it.placeIds}>1
+  for((id,q) in pos){
+   val place=byId[id]?:continue
+   val transfer=lines.count{it.placeIds.contains(id)}>1
    val radius=if(transfer)15f else 11f
-   p.style=Paint.Style.FILL
-   p.color=Color.WHITE
-   c.drawCircle(q.x,q.y,radius+3f,p)
-   p.color=Color.DKGRAY
-   c.drawCircle(q.x,q.y,radius,p)
-   if(transfer){
-    p.color=Color.WHITE
-    c.drawCircle(q.x,q.y,radius-5f,p)
-   }
-   p.color=Color.DKGRAY
-   p.textSize=14f
-   p.typeface=android.graphics.Typeface.DEFAULT_BOLD
-   p.textAlign=Paint.Align.CENTER
-   c.drawText((index+1).toString(),q.x,q.y+5f,p)
+   p.style=Paint.Style.FILL;p.color=Color.WHITE;c.drawCircle(q.x,q.y,radius+4f,p)
+   p.color=Color.DKGRAY;c.drawCircle(q.x,q.y,radius,p)
+   if(transfer){p.color=Color.WHITE;c.drawCircle(q.x,q.y,radius-5f,p)}
+   p.color=Color.DKGRAY;p.textAlign=Paint.Align.CENTER;p.textSize=12f;p.typeface=android.graphics.Typeface.DEFAULT_BOLD
+   c.drawText(shortName(place.name),q.x,q.y+radius+17f,p)
   }
-
   // Legend.
-  p.textAlign=Paint.Align.LEFT
-  p.typeface=android.graphics.Typeface.DEFAULT
-  p.textSize=12f
-  val columns=2
-  val rows=(lines.size+columns-1)/columns
+  p.textAlign=Paint.Align.LEFT;p.typeface=android.graphics.Typeface.DEFAULT;p.textSize=12f
   for(i in lines.indices){
-   val col=i%columns
-   val row=i/columns
-   val x=14f+col*(width/2f)
-   val y=height-12f-(rows-1-row)*20f
-   p.style=Paint.Style.STROKE
-   p.strokeWidth=6f
-   p.strokeCap=Paint.Cap.ROUND
-   p.color=colors[i%colors.size]
-   c.drawLine(x,y,x+22f,y,p)
-   p.style=Paint.Style.FILL
-   p.color=Color.DKGRAY
-   c.drawText((i+1).toString()+" "+lines[i].name,x+30f,y+4f,p)
+   val col=i%2;val row=i/2;val x=14f+col*(width/2f);val y=height-16f-(lines.size/2-row-1).coerceAtLeast(0)*20f
+   p.style=Paint.Style.STROKE;p.strokeWidth=6f;p.strokeCap=Paint.Cap.ROUND;p.color=colors[i%colors.size];c.drawLine(x,y,x+20f,y,p)
+   p.style=Paint.Style.FILL;p.color=Color.DKGRAY;c.drawText((i+1).toString()+" "+shortName(lines[i].name),x+28f,y+4f,p)
   }
-  p.textAlign=Paint.Align.LEFT
  }
 }
-
 class MainActivity:Activity(){
  private lateinit var db:Db
  private lateinit var mapView:MapView
