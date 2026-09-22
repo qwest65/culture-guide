@@ -298,7 +298,7 @@ class MainActivity:Activity(){
  }
 
  private fun searchCity(){
-  val input=EditText(this);input.hint="Например: Москва, Россия";input.singleLine=true
+  val input=EditText(this);input.hint="Например: Москва, Россия";input.setSingleLine(true)
   AlertDialog.Builder(this).setTitle("Найти город").setView(input).setNegativeButton("Отмена",null).setPositiveButton("Искать"){_,_->submitCitySearch(input.text.toString().trim())}.show()
  }
  private fun submitCitySearch(query:String){
@@ -309,7 +309,7 @@ class MainActivity:Activity(){
   searchSession=searchManager.submit(query,com.yandex.mapkit.map.VisibleRegionUtils.toPolygon(mapView.mapWindow.map.visibleRegion),SearchOptions(),object:SearchSession.SearchListener{
    override fun onSearchResponse(response:Response){
     val results=response.collection.children.mapNotNull{item->
-     val obj=item.obj;val point=obj.geometry.firstOrNull()?.point;point?.let{Triple(obj.name,it.latitude,it.longitude)}
+     val obj=item.obj ?: return@mapNotNull null;val point=obj.geometry.firstOrNull()?.point;point?.let{Triple(obj.name ?: "Без названия",it.latitude,it.longitude)}
     }.take(8)
     if(results.isEmpty()){Toast.makeText(this@MainActivity,"Город не найден",Toast.LENGTH_LONG).show();return}
     val labels=results.map{it.first+" · %.5f, %.5f".format(java.util.Locale.US,it.second,it.third)}
