@@ -35,7 +35,13 @@ import com.yandex.mapkit.search.SearchFactory
 import com.yandex.mapkit.search.SearchManagerType
 import com.yandex.mapkit.search.SearchOptions
 import com.yandex.mapkit.search.SearchManager
-import com.yandex.mapkit.search.Session
+import com.yandex.mapkit.search.Session as SearchSession
+import com.yandex.mapkit.transport.TransportFactory
+import com.yandex.mapkit.transport.masstransit.PedestrianRouter
+import com.yandex.mapkit.transport.masstransit.RouteOptions
+import com.yandex.mapkit.transport.masstransit.FitnessOptions
+import com.yandex.mapkit.transport.masstransit.TimeOptions
+import com.yandex.mapkit.transport.masstransit.Session as RouteSession
 import com.yandex.runtime.Error
 import com.yandex.runtime.network.NetworkError
 import com.yandex.runtime.image.ImageProvider
@@ -216,7 +222,10 @@ class MainActivity:Activity(){
  private val CREATE_JSON=2001
  private val OPEN_JSON=2002
  private lateinit var searchManager:SearchManager
- private var searchSession:Session?=null
+ private var searchSession:SearchSession?=null
+ private var pedestrianRouter:PedestrianRouter?=null
+ private val routeSessions=mutableListOf<RouteSession>()
+ private var routeBuildToken=0
  private var lastLocation:Location?=null
  private var routePolyline:MapObject?=null
  private val routePolylines=mutableListOf<MapObject>()
@@ -238,6 +247,7 @@ class MainActivity:Activity(){
   super.onCreate(b)
   MapKitFactory.initialize(this)
   searchManager=SearchFactory.getInstance().createSearchManager(SearchManagerType.COMBINED)
+  pedestrianRouter=TransportFactory.getInstance().createPedestrianRouter()
   db=Db(this)
   locationManager=getSystemService(Context.LOCATION_SERVICE) as LocationManager
   ui();loadCities();refresh();requestLocation()
@@ -296,7 +306,7 @@ class MainActivity:Activity(){
   val city=cities.firstOrNull()
   val center=city?.let{Point(it.lat,it.lon)}?:Point(55.751244,37.618423)
   moveCamera(center.latitude,center.longitude,6f)
-  searchSession=searchManager.submit(query,com.yandex.mapkit.map.VisibleRegionUtils.toPolygon(mapView.mapWindow.map.visibleRegion),SearchOptions(),object:Session.SearchListener{
+  searchSession=searchManager.submit(query,com.yandex.mapkit.map.VisibleRegionUtils.toPolygon(mapView.mapWindow.map.visibleRegion),SearchOptions(),object:SearchSession.SearchListener{
    override fun onSearchResponse(response:Response){
     val results=response.collection.children.mapNotNull{item->
      val obj=item.obj;val point=obj.geometry.firstOrNull()?.point;point?.let{Triple(obj.name,it.latitude,it.longitude)}
@@ -440,20 +450,59 @@ class MainActivity:Activity(){
 
  private fun buildRoute(){
   val source=if(routePlaces.isNotEmpty())routePlaces else currentPlaces
-  if(source.isEmpty())return
-  val start=lastLocation?.let{location->source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}}?:source.first()
-  val r=mutableListOf(start);val left=source.filter{it.id!=start.id}.toMutableList()
-  while(left.isNotEmpty()){val next=left.minBy{dist(r.last(),it)};r+=next;left.remove(next)}
-  routePlaces=r;schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=emptyList();schemeView.invalidate()
-  routePolyline?.let{mapView.mapWindow.map.mapObjects.remove(it)}
-  val points=r.map{Point(it.lat,it.lon)}
-  if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));setStrokeWidth(7f);zIndex=3f}}
+  if(source.size<2){Toast.makeText(this,"Для маршрута нужно минимум 2 объекта",Toast.LENGTH_LONG).show();return}
+  val start=lastLocation?.let{location->
+   source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}
+  }?:source.first()
+  val ordered=mutableListOf(start);val left=source.filter{it.id!=start.id}.toMutableList()
+  while(left.isNotEmpty()){val next=left.minBy{dist(ordered.last(),it)};ordered+=next;left.remove(next)}
+  routePlaces=ordered
+  routeBuildToken++
+  val token=routeBuildToken
+  routeSessions.forEach{it.cancel()};routeSessions.clear()
+  routePolylines.forEach{mapView.mapWindow.map.mapObjects.remove(it)};routePolylines.clear()
+  routePolyline=null
   lastLocation?.let{showUserLocation(it.latitude,it.longitude,false)}
   showMap()
-  val km=r.zipWithNext().sumOf{dist(it.first,it.second)}
-  status.text="Маршрут по объектам: %.1f км · ".format(java.util.Locale.US,km)+r.size+" остановок"
+  status.text="Строю пешеходный маршрут… 0/"+(ordered.size-1)
+  buildPedestrianLegs(ordered,0,token)
  }
 
+ private fun buildPedestrianLegs(points:List<Place>,index:Int,token:Int){
+  if(token!=routeBuildToken)return
+  if(index>=points.size-1){
+   status.text="Пешеходный маршрут построен · "+points.size+" остановок"
+   return
+  }
+  val from=points[index];val to=points[index+1]
+  val requestPoints=listOf(
+   com.yandex.mapkit.RequestPoint(Point(from.lat,from.lon),com.yandex.mapkit.RequestPointType.WAYPOINT,null,null,null),
+   com.yandex.mapkit.RequestPoint(Point(to.lat,to.lon),com.yandex.mapkit.RequestPointType.WAYPOINT,null,null,null)
+  )
+  val router=pedestrianRouter
+  if(router==null){Toast.makeText(this,"Пешеходный роутер недоступен",Toast.LENGTH_LONG).show();return}
+  val listener=object:RouteSession.RouteListener{
+   override fun onMasstransitRoutes(routes:MutableList<com.yandex.mapkit.transport.masstransit.Route>){
+    if(token!=routeBuildToken)return
+    if(routes.isEmpty()){Toast.makeText(this@MainActivity,"Не удалось построить участок "+(index+1),Toast.LENGTH_LONG).show();return}
+    val geometry=routes[0].geometry
+    val line=mapView.mapWindow.map.mapObjects.addPolyline(geometry).apply{
+     setStrokeColor(Color.rgb(49,94,251));setStrokeWidth(8f);zIndex=3f
+    }
+    routePolylines+=line
+    status.text="Пешеходный маршрут… "+(index+1)+"/"+(points.size-1)
+    buildPedestrianLegs(points,index+1,token)
+   }
+   override fun onMasstransitRoutesError(error:Error){
+    if(token!=routeBuildToken)return
+    val message=when(error){is NetworkError->"Нет сети для построения маршрута";else->"Yandex не построил участок "+(index+1)}
+    Toast.makeText(this@MainActivity,message,Toast.LENGTH_LONG).show()
+    status.text="Маршрут остановлен на участке "+(index+1)
+   }
+  }
+  val session=router.requestRoutes(requestPoints,TimeOptions(),RouteOptions(FitnessOptions(false,false)),listener)
+  routeSessions+=session
+ }
  private fun showPlace(p:Place){
   val lines=db.routesForPlace(cityId,p.id)
   val lineText=if(lines.isEmpty())"Линии: —" else "Линии: "+lines.joinToString(", "){it.name}
