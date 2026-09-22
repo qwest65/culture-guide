@@ -29,6 +29,15 @@ import com.yandex.mapkit.map.MapObject
 import com.yandex.mapkit.map.MapObjectTapListener
 import com.yandex.mapkit.map.PlacemarkMapObject
 import com.yandex.mapkit.mapview.MapView
+import com.yandex.mapkit.GeoObjectCollection
+import com.yandex.mapkit.search.Response
+import com.yandex.mapkit.search.SearchFactory
+import com.yandex.mapkit.search.SearchManagerType
+import com.yandex.mapkit.search.SearchOptions
+import com.yandex.mapkit.search.SearchManager
+import com.yandex.mapkit.search.Session
+import com.yandex.runtime.Error
+import com.yandex.runtime.network.NetworkError
 import com.yandex.runtime.image.ImageProvider
 import kotlin.math.*
 import java.lang.ref.WeakReference
@@ -206,6 +215,8 @@ class MainActivity:Activity(){
  private lateinit var searchBox:EditText
  private val CREATE_JSON=2001
  private val OPEN_JSON=2002
+ private lateinit var searchManager:SearchManager
+ private var searchSession:Session?=null
  private var lastLocation:Location?=null
  private var routePolyline:MapObject?=null
  private val routePolylines=mutableListOf<MapObject>()
@@ -226,6 +237,7 @@ class MainActivity:Activity(){
  override fun onCreate(b:Bundle?){
   super.onCreate(b)
   MapKitFactory.initialize(this)
+  searchManager=SearchFactory.getInstance().createSearchManager(SearchManagerType.COMBINED)
   db=Db(this)
   locationManager=getSystemService(Context.LOCATION_SERVICE) as LocationManager
   ui();loadCities();refresh();requestLocation()
@@ -252,7 +264,7 @@ class MainActivity:Activity(){
   tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,58))
   val adminRow=LinearLayout(this);adminRow.orientation=LinearLayout.HORIZONTAL
   fun adminButton(text:String,onClick:()->Unit){val b=Button(this);b.text=text;b.setAllCaps(false);b.setOnClickListener{onClick()};adminRow.addView(b,LinearLayout.LayoutParams(0,50,1f))}
-  adminButton("Город"){showAddCity()};adminButton("Объект"){showAddPlace()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(adminRow)
+  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Объект"){showAddPlace()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
   val mapLayer=FrameLayout(this)
   mapView=MapView(this)
   schemeView=MetroView(this)
@@ -275,6 +287,29 @@ class MainActivity:Activity(){
   }
  }
 
+ private fun searchCity(){
+  val input=EditText(this);input.hint="Например: Москва, Россия";input.singleLine=true
+  AlertDialog.Builder(this).setTitle("Найти город").setView(input).setNegativeButton("Отмена",null).setPositiveButton("Искать"){_,_->submitCitySearch(input.text.toString().trim())}.show()
+ }
+ private fun submitCitySearch(query:String){
+  if(query.isBlank())return
+  val city=cities.firstOrNull()
+  val center=city?.let{Point(it.lat,it.lon)}?:Point(55.751244,37.618423)
+  moveCamera(center.latitude,center.longitude,6f)
+  searchSession=searchManager.submit(query,com.yandex.mapkit.map.VisibleRegionUtils.toPolygon(mapView.mapWindow.map.visibleRegion),SearchOptions(),object:Session.SearchListener{
+   override fun onSearchResponse(response:Response){
+    val results=response.collection.children.mapNotNull{item->
+     val obj=item.obj;val point=obj.geometry.firstOrNull()?.point;point?.let{Triple(obj.name,it.latitude,it.longitude)}
+    }.take(8)
+    if(results.isEmpty()){Toast.makeText(this@MainActivity,"Город не найден",Toast.LENGTH_LONG).show();return}
+    val labels=results.map{it.first+" · %.5f, %.5f".format(java.util.Locale.US,it.second,it.third)}
+    AlertDialog.Builder(this@MainActivity).setTitle("Выберите город").setItems(labels.toTypedArray()){_,which->
+     val v=results[which];try{db.addCity(v.first,"",v.second,v.third);loadCities();cityId=db.cities().lastOrNull()?.id?:cityId;refresh();moveCamera(v.second,v.third,13f)}catch(_:Exception){Toast.makeText(this@MainActivity,"Не удалось добавить город",Toast.LENGTH_LONG).show()}
+    }.show()
+   }
+   override fun onSearchError(error:Error){Toast.makeText(this@MainActivity,if(error is NetworkError)"Нет сети для поиска" else "Ошибка поиска",Toast.LENGTH_LONG).show()}
+  })
+ }
  private fun showAddCity(){
   val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
   val name=EditText(this);name.hint="Город";val country=EditText(this);country.hint="Страна";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,country,lat,lon).forEach{box.addView(it)}
