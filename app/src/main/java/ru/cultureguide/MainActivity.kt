@@ -163,19 +163,6 @@ class MetroView(c:Context):View(c){
    }
   }
 
-  // Generated walking route.
-  if(route.size>1){
-   p.style=Paint.Style.STROKE
-   p.strokeWidth=4f
-   p.strokeCap=Paint.Cap.ROUND
-   p.color=Color.DKGRAY
-   for(i in 1 until route.size){
-    val a=positions[route[i-1].id]
-    val b=positions[route[i].id]
-    if(a!=null&&b!=null)c.drawLine(a.x,a.y,b.x,b.y,p)
-   }
-  }
-
   // Stations and transfer rings.
   for((index,place) in places.withIndex()){
    val q=positions[place.id]?:continue
@@ -307,7 +294,7 @@ class MainActivity:Activity(){
 
  private fun showScheme(){
   mapView.visibility=View.VISIBLE;schemeView.visibility=View.VISIBLE
-  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=routePlaces;schemeView.invalidate()
+  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=emptyList();schemeView.invalidate()
   list.removeAllViews()
   val title=TextView(this);title.text="Схема культурных маршрутов";title.textSize=20f;title.setPadding(8,8,8,8);list.addView(title)
   for((index,line) in routeLines.withIndex()){val t=TextView(this);t.text=(index+1).toString()+". "+line.name+" · "+line.placeIds.size+" объектов\n"+line.description;t.textSize=16f;t.setPadding(14,12,8,12);t.setOnClickListener{selectRoute(line)};list.addView(t)}
@@ -333,7 +320,7 @@ class MainActivity:Activity(){
 
  private fun selectRoute(line:RouteLine){
   selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
-  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=routePlaces;schemeView.invalidate()
+  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=emptyList();schemeView.invalidate()
   drawRoutesOnMap(line.id);list.removeAllViews()
   val head=TextView(this);head.text=line.name+"\n"+line.description;head.textSize=18f;head.setPadding(8,10,8,10);list.addView(head)
   routePlaces.forEachIndexed{index,p->
@@ -413,7 +400,7 @@ class MainActivity:Activity(){
   val start=lastLocation?.let{location->source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}}?:source.first()
   val r=mutableListOf(start);val left=source.filter{it.id!=start.id}.toMutableList()
   while(left.isNotEmpty()){val next=left.minBy{dist(r.last(),it)};r+=next;left.remove(next)}
-  routePlaces=r;schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=r;schemeView.invalidate()
+  routePlaces=r;schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=emptyList();schemeView.invalidate()
   routePolyline?.let{mapView.mapWindow.map.mapObjects.remove(it)}
   val points=r.map{Point(it.lat,it.lon)}
   if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));setStrokeWidth(7f);zIndex=3f}}
