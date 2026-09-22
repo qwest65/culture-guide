@@ -3,21 +3,31 @@ package ru.cultureguide
 import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
-import android.os.Bundle
-import android.graphics.*
-import android.view.View
-import android.webkit.WebView
-import android.webkit.WebViewClient
-import android.widget.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.PointF
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
-import android.database.sqlite.SQLiteOpenHelper
+import android.os.Bundle
+import android.view.View
+import android.widget.*
 import android.database.sqlite.SQLiteDatabase
+import android.database.sqlite.SQLiteOpenHelper
+import com.yandex.mapkit.MapKitFactory
+import com.yandex.mapkit.geometry.Point
+import com.yandex.mapkit.geometry.Polyline
+import com.yandex.mapkit.map.CameraPosition
+import com.yandex.mapkit.map.MapObject
+import com.yandex.mapkit.map.MapObjectTapListener
+import com.yandex.mapkit.map.PlacemarkMapObject
+import com.yandex.mapkit.mapview.MapView
+import com.yandex.runtime.image.ImageProvider
 import kotlin.math.*
 
 data class Place(val name:String,val category:String,val description:String,val address:String,val lat:Double,val lon:Double)
@@ -66,94 +76,131 @@ class MetroView(c:Context):View(c){
 }
 
 class MainActivity:Activity(){
- lateinit var db:Db;lateinit var map:MetroView;lateinit var web:WebView;lateinit var list:LinearLayout;lateinit var status:TextView;lateinit var locationManager:LocationManager;var cityId=1L;var currentPlaces:List<Place> = emptyList();var lastLocation:Location?=null
- val locationListener=object:LocationListener{override fun onLocationChanged(location:Location){lastLocation=location;web.evaluateJavascript("showUser(\${location.latitude},\${location.longitude},true);",null);status.text="GPS: %.5f, %.5f".format(java.util.Locale.US,location.latitude,location.longitude)}}
- override fun onCreate(b:Bundle?){super.onCreate(b);db=Db(this);locationManager=getSystemService(Context.LOCATION_SERVICE) as LocationManager;ui();refresh();requestLocation()}
- fun ui(){
+ private lateinit var db:Db
+ private lateinit var mapView:MapView
+ private lateinit var schemeView:MetroView
+ private lateinit var list:LinearLayout
+ private lateinit var status:TextView
+ private lateinit var locationManager:LocationManager
+ private var cityId=1L
+ private var currentPlaces:List<Place> = emptyList()
+ private var lastLocation:Location?=null
+ private var routePolyline:MapObject?=null
+ private var userPlacemark:PlacemarkMapObject?=null
+ private val pinProvider by lazy{ImageProvider.fromResource(this,R.drawable.ic_map_pin)}
+ private val userPinProvider by lazy{ImageProvider.fromResource(this,R.drawable.ic_user_pin)}
+
+ private val placeTapListener=MapObjectTapListener{mapObject,_->val place=mapObject.userData as? Place ?: return@MapObjectTapListener false;showPlace(place);true}
+ private val userTapListener=MapObjectTapListener{_,_->AlertDialog.Builder(this).setTitle("Моё положение").setMessage(lastLocation?.let{"%.6f, %.6f".format(java.util.Locale.US,it.latitude,it.longitude)}?:"Координаты пока не получены").setPositiveButton("Закрыть",null).show();true}
+ private val locationListener=object:LocationListener{
+  override fun onLocationChanged(location:Location){
+   lastLocation=location
+   showUserLocation(location.latitude,location.longitude,false)
+   status.text="GPS: %.5f, %.5f".format(java.util.Locale.US,location.latitude,location.longitude)
+  }
+ }
+
+ override fun onCreate(b:Bundle?){
+  super.onCreate(b)
+  MapKitFactory.initialize(this)
+  db=Db(this)
+  locationManager=getSystemService(Context.LOCATION_SERVICE) as LocationManager
+  ui();refresh();requestLocation()
+ }
+
+ private fun ui(){
   val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,10,14,8)
   val title=TextView(this);title.text="ТроицкGuide";title.textSize=26f;root.addView(title)
   val sub=TextView(this);sub.text="Троицк, Челябинская область";sub.textSize=16f;root.addView(sub)
   val tabs=LinearLayout(this)
-  val mapBtn=Button(this);mapBtn.text="Карта";val schemeBtn=Button(this);schemeBtn.text="Схема";val routeBtn=Button(this);routeBtn.text="Маршрут";val gpsBtn=Button(this);gpsBtn.text="GPS"
+  val mapBtn=Button(this);mapBtn.text="Карта"
+  val schemeBtn=Button(this);schemeBtn.text="Схема"
+  val routeBtn=Button(this);routeBtn.text="Маршрут"
+  val gpsBtn=Button(this);gpsBtn.text="GPS"
   tabs.addView(mapBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(schemeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(routeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(gpsBtn,LinearLayout.LayoutParams(0,52,1f));root.addView(tabs)
-  web=WebView(this);web.webViewClient=WebViewClient();web.settings.javaScriptEnabled=true;web.settings.domStorageEnabled=true
-  root.addView(web,LinearLayout.LayoutParams(-1,0,1.35f))
-  map=MetroView(this);map.visibility=View.GONE;root.addView(map,LinearLayout.LayoutParams(-1,0,1.35f))
+  mapView=MapView(this);root.addView(mapView,LinearLayout.LayoutParams(-1,0,1.35f))
+  schemeView=MetroView(this);schemeView.visibility=View.GONE;root.addView(schemeView,LinearLayout.LayoutParams(-1,0,1.35f))
   status=TextView(this);status.textSize=15f;status.setPadding(4,5,4,5);root.addView(status)
-  val sv=ScrollView(this);list=LinearLayout(this);list.orientation=LinearLayout.VERTICAL;sv.addView(list);root.addView(sv,LinearLayout.LayoutParams(-1,0,1f));setContentView(root)
-  mapBtn.setOnClickListener{web.visibility=View.VISIBLE;map.visibility=View.GONE;status.text="Карта OpenStreetMap · выбери объект в списке"}
-  schemeBtn.setOnClickListener{web.visibility=View.GONE;map.visibility=View.VISIBLE;status.text="Схематическая карта маршрутов"}
+  val sv=ScrollView(this);list=LinearLayout(this);list.orientation=LinearLayout.VERTICAL;sv.addView(list);root.addView(sv,LinearLayout.LayoutParams(-1,0,1f))
+  setContentView(root)
+
+  mapBtn.setOnClickListener{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;status.text="Яндекс Карты · выбери объект на карте или в списке"}
+  schemeBtn.setOnClickListener{mapView.visibility=View.GONE;schemeView.visibility=View.VISIBLE;status.text="Схематическая карта маршрутов"}
   routeBtn.setOnClickListener{buildRoute()}
-  gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{web.visibility=View.VISIBLE;map.visibility=View.GONE;web.evaluateJavascript("centerMap(\${it.latitude},\${it.longitude});",null)}}
+  gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;showUserLocation(it.latitude,it.longitude,true)}}
  }
- fun requestLocation(){if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION),1001);return};try{val provider=when{locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)->LocationManager.GPS_PROVIDER;locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)->LocationManager.NETWORK_PROVIDER;else->null};if(provider==null){status.text="GPS недоступен: включите геолокацию";return};locationManager.requestLocationUpdates(provider,5000L,5f,locationListener);locationManager.getLastKnownLocation(provider)?.let{locationListener.onLocationChanged(it)}}catch(_:SecurityException){status.text="Нет разрешения на геолокацию"}}
- override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<String>,results:IntArray){super.onRequestPermissionsResult(requestCode,permissions,results);if(requestCode==1001&&results.any{it==PackageManager.PERMISSION_GRANTED})requestLocation()else if(requestCode==1001)status.text="Геолокация отключена пользователем"}
- override fun onDestroy(){if(::locationManager.isInitialized)locationManager.removeUpdates(locationListener);super.onDestroy()}
- fun buildRoute(){
-  if(currentPlaces.isEmpty())return
-  val r=mutableListOf(currentPlaces.first());val left=currentPlaces.drop(1).toMutableList()
-  while(left.isNotEmpty()){val n=left.minBy{dist(r.last(),it)};r+=n;left.remove(n)}
-  map.route=r;map.invalidate()
-  web.evaluateJavascript("showRoute([${r.joinToString(","){ "[${it.lat},${it.lon}]" }}]);",null)
-  status.text="Маршрут: %.1f км · ${r.size} объектов".format(java.util.Locale.US,r.zipWithNext().sumOf{dist(it.first,it.second)})
- }
- fun refresh(){
-  currentPlaces=db.places(cityId);map.places=currentPlaces;map.route=emptyList();map.invalidate();web.loadDataWithBaseURL("https://www.openstreetmap.org/","${mapHtml()}","text/html","UTF-8",null)
+
+ private fun refresh(){
+  currentPlaces=db.places(cityId);schemeView.places=currentPlaces;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap()
   list.removeAllViews()
   currentPlaces.forEachIndexed{i,z->
    val t=TextView(this);t.text="${i+1}. ${z.name}\\n${z.category}\\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12)
-   t.setOnClickListener{showPlace(z)};list.addView(t)
+   t.setOnClickListener{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;showPlace(z);moveCamera(z.lat,z.lon,16f)}
+   list.addView(t)
   }
-  status.text="${currentPlaces.size} объектов · карта OpenStreetMap"
+  status.text="${currentPlaces.size} объектов · Яндекс Карты"
  }
- fun showPlace(p:Place){
-  val box=TextView(this);box.text="${p.category}\\n\\n${p.description}\\n\\nАдрес: ${p.address}\\n\\nКоординаты: %.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon);box.textSize=16f;box.setPadding(28,8,28,8)
+
+ private fun drawPlacesOnMap(){
+  val objects=mapView.mapWindow.map.mapObjects
+  objects.clear();routePolyline=null;userPlacemark=null
+  currentPlaces.forEach{place->
+   objects.addPlacemark().apply{geometry=Point(place.lat,place.lon);setIcon(pinProvider);userData=place;addTapListener(placeTapListener)}
+  }
+  moveCamera(54.0820,61.5596,14f)
+ }
+
+ private fun showUserLocation(lat:Double,lon:Double,center:Boolean){
+  val objects=mapView.mapWindow.map.mapObjects
+  if(userPlacemark==null){userPlacemark=objects.addPlacemark().apply{setIcon(userPinProvider);addTapListener(userTapListener)}}
+  userPlacemark?.geometry=Point(lat,lon);userPlacemark?.zIndex=10f
+  if(center)moveCamera(lat,lon,16f)
+ }
+
+ private fun moveCamera(lat:Double,lon:Double,zoom:Float){mapView.mapWindow.map.move(CameraPosition(Point(lat,lon),zoom,0f,0f))}
+
+ private fun requestLocation(){
+  if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED){
+   requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION),1001);return
+  }
+  try{
+   val provider=when{locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)->LocationManager.GPS_PROVIDER;locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)->LocationManager.NETWORK_PROVIDER;else->null}
+   if(provider==null){status.text="GPS недоступен: включите геолокацию";return}
+   locationManager.requestLocationUpdates(provider,5000L,5f,locationListener)
+   locationManager.getLastKnownLocation(provider)?.let{locationListener.onLocationChanged(it)}
+  }catch(_:SecurityException){status.text="Нет разрешения на геолокацию"}
+ }
+
+ override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<String>,results:IntArray){
+  super.onRequestPermissionsResult(requestCode,permissions,results)
+  if(requestCode==1001&&results.any{it==PackageManager.PERMISSION_GRANTED})requestLocation()else if(requestCode==1001)status.text="Геолокация отключена пользователем"
+ }
+
+ private fun buildRoute(){
+  if(currentPlaces.isEmpty())return
+  val start=lastLocation?.let{location->currentPlaces.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}}?:currentPlaces.first()
+  val r=mutableListOf(start);val left=currentPlaces.filter{it!=start}.toMutableList()
+  while(left.isNotEmpty()){val next=left.minBy{dist(r.last(),it)};r+=next;left.remove(next)}
+  schemeView.route=r;schemeView.invalidate()
+  routePolyline?.let{mapView.mapWindow.map.mapObjects.remove(it)}
+  val points=r.map{Point(it.lat,it.lon)}
+  if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));strokeWidth=6f;zIndex=1f}}
+  lastLocation?.let{showUserLocation(it.latitude,it.longitude,false)}
+  mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE
+  val km=r.zipWithNext().sumOf{dist(it.first,it.second)}
+  status.text="Маршрут: %.1f км · ${r.size} объектов".format(java.util.Locale.US,km)
+ }
+
+ private fun showPlace(p:Place){
+  val box=TextView(this)
+  box.text="${p.category}\\n\\n${p.description}\\n\\nАдрес: ${p.address}\\n\\nКоординаты: %.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)
+  box.textSize=16f;box.setPadding(28,8,28,8)
   AlertDialog.Builder(this).setTitle(p.name).setView(box).setPositiveButton("Открыть карту"){_,_->openMap(p)}.setNegativeButton("Закрыть",null).show()
  }
- fun openMap(p:Place){startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${Uri.encode(p.name)})")))}
- fun mapHtml():String{
-  val markers=currentPlaces.joinToString(","){ "{name:'${it.name.replace("'","\\\\'")}',lat:${it.lat},lon:${it.lon},cat:'${it.category}',address:'${it.address.replace("'","\\\\'")}'}" }
-  return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
-<link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
-<style>html,body,#map{height:100%;margin:0} .maplibregl-popup-content{font-size:15px}</style>
-</head><body><div id="map"></div>
-<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script><script>
-var data=[$markers];
-var map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[61.5596,54.0820],zoom:14});
-map.addControl(new maplibregl.NavigationControl(),'top-left');
-var markers=[];
-var userMarker=null;
-var pendingRoute=null;
-function draw(){
-  markers.forEach(function(m){m.remove();}); markers=[];
-  data.forEach(function(x,i){
-    var el=document.createElement('div');
-    el.style.width='22px';el.style.height='22px';el.style.borderRadius='50%';
-    el.style.background='#3388ff';el.style.border='3px solid white';el.style.boxShadow='0 1px 4px #555';
-    var m=new maplibregl.Marker({element:el}).setLngLat([x.lon,x.lat])
-      .setPopup(new maplibregl.Popup({offset:18}).setHTML('<b>'+(i+1)+'. '+x.name+'</b><br>'+x.cat+'<br>'+x.address)).addTo(map);
-    markers.push(m);
-  });
-}
-function installRoute(){
-  if(!map.isStyleLoaded())return;
-  if(!map.getSource('route')){
-    map.addSource('route',{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:[]}}});
-    map.addLayer({id:'route-line',type:'line',source:'route',paint:{'line-color':'#315efb','line-width':6,'line-opacity':0.9}});
-  }
-  if(pendingRoute)map.getSource('route').setData({type:'Feature',geometry:{type:'LineString',coordinates:pendingRoute.map(function(p){return [p[1],p[0]];})}});
-}
-map.on('load',function(){draw();installRoute();});
-function showUser(lat,lon,center){
-  if(userMarker)userMarker.remove();
-  userMarker=new maplibregl.Marker({color:'#e53935'}).setLngLat([lon,lat]).setPopup(new maplibregl.Popup({offset:18}).setText('Моё положение')).addTo(map);
-  if(center)map.flyTo({center:[lon,lat],zoom:15});
-}
-function centerMap(lat,lon){map.flyTo({center:[lon,lat],zoom:16});}
-function showRoute(points){
-  pendingRoute=points; installRoute();
-  if(points.length>1){var bounds=new maplibregl.LngLatBounds();points.forEach(function(p){bounds.extend([p[1],p[0]]);});map.fitBounds(bounds,{padding:30});}
-}
-</script></body></html>"""
- }
+
+ private fun openMap(p:Place){startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${Uri.encode(p.name)})")))}
+
+ override fun onStart(){super.onStart();MapKitFactory.getInstance().onStart();mapView.onStart()}
+ override fun onStop(){mapView.onStop();MapKitFactory.getInstance().onStop();super.onStop()}
+ override fun onDestroy(){if(::locationManager.isInitialized)locationManager.removeUpdates(locationListener);super.onDestroy()}
 }
