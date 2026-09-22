@@ -49,3 +49,4 @@ jobs:
               --title "CultureGuide — latest" \
               --notes "Последняя успешная Android-сборка CultureGuide."
           fi
+# Trigger rebuild after configuring MAPKIT_API_KEY
