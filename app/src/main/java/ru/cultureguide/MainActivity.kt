@@ -114,7 +114,7 @@ class MainActivity:Activity(){
  fun mapHtml():String{
   val markers=currentPlaces.joinToString(","){ "{name:'${it.name.replace("'","\\\\'")}',lat:${it.lat},lon:${it.lon},cat:'${it.category}',address:'${it.address.replace("'","\\\\'")}'}" }
   return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><style>html,body,#map{height:100%;margin:0}.leaflet-popup-content{font-size:15px}</style></head><body><div id="map"></div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
-var data=[$markers];var map=L.map('map').setView([54.0820,61.5596],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);var layer=L.layerGroup().addTo(map);
+var data=[$markers];var map=L.map('map').setView([54.0820,61.5596],14);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);var layer=L.layerGroup().addTo(map);
 function draw(){layer.clearLayers();data.forEach(function(x,i){L.marker([x.lat,x.lon]).addTo(layer).bindPopup('<b>'+(i+1)+'. '+x.name+'</b><br>'+x.cat+'<br>'+x.address);});}
 var userLayer=L.layerGroup().addTo(map);function showUser(lat,lon,center){userLayer.clearLayers();L.circleMarker([lat,lon],{radius:9,weight:3,fillOpacity:0.8}).addTo(userLayer).bindPopup('Моё положение');if(center)map.setView([lat,lon],15);}function centerMap(lat,lon){map.setView([lat,lon],16);}function showRoute(points){draw();if(points.length>1){L.polyline(points,{weight:6}).addTo(map);map.fitBounds(points,{padding:[20,20]});}}draw();
 </script></body></html>"""
