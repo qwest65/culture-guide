@@ -135,18 +135,25 @@ class MainActivity:Activity(){
   currentPlaces=db.places(cityId);schemeView.places=currentPlaces;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap()
   list.removeAllViews()
   currentPlaces.forEachIndexed{i,z->
-   val t=TextView(this);t.text="${i+1}. ${z.name}\\n${z.category}\\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12)
+   val t=TextView(this);t.text="${i+1}. ${z.name}\n${z.category}\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12)
    t.setOnClickListener{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;showPlace(z);moveCamera(z.lat,z.lon,16f)}
    list.addView(t)
   }
-  status.text="${currentPlaces.size} объектов · Яндекс Карты"
+  status.text="${currentPlaces.size} объектов · Яндекс Карты · метки загружены"
  }
 
  private fun drawPlacesOnMap(){
   val objects=mapView.mapWindow.map.mapObjects
   objects.clear();routePolyline=null;userPlacemark=null
-  currentPlaces.forEach{place->
-   objects.addPlacemark().apply{geometry=Point(place.lat,place.lon);setIcon(pinProvider);userData=place;addTapListener(WeakReference(placeTapListener))}
+  currentPlaces.forEachIndexed{index,place->
+   objects.addPlacemark().apply{
+    geometry=Point(place.lat,place.lon)
+    setIcon(pinProvider)
+    zIndex=20f
+    setText("${index+1}. ${place.name}")
+    userData=place
+    addTapListener(WeakReference(placeTapListener))
+   }
   }
   moveCamera(54.0820,61.5596,14f)
  }
@@ -194,7 +201,7 @@ class MainActivity:Activity(){
 
  private fun showPlace(p:Place){
   val box=TextView(this)
-  box.text="${p.category}\\n\\n${p.description}\\n\\nАдрес: ${p.address}\\n\\nКоординаты: %.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)
+  box.text="${p.category}\n\n${p.description}\n\nАдрес: ${p.address}\n\nКоординаты: %.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)
   box.textSize=16f;box.setPadding(28,8,28,8)
   AlertDialog.Builder(this).setTitle(p.name).setView(box).setPositiveButton("Открыть карту"){_,_->openMap(p)}.setNegativeButton("Закрыть",null).show()
  }
