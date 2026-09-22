@@ -82,7 +82,7 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
    val names=r[2] as List<*>
    for((order,name) in names.withIndex()){
     val q=db.rawQuery("SELECT id FROM places WHERE city_id=? AND name=? LIMIT 1",arrayOf(cityId.toString(),name as String))
-    q.use{if(it.moveToFirst()){linkStmt.bindLong(1,routeId);linkStmt.bindLong(2,it.getLong(0));linkStmt.bindLong(3,order);linkStmt.executeInsert()}}
+    q.use{if(it.moveToFirst()){linkStmt.bindLong(1,routeId);linkStmt.bindLong(2,it.getLong(0));linkStmt.bindLong(3,order.toLong());linkStmt.executeInsert()}}
    }
   }
  }
@@ -254,7 +254,7 @@ class MainActivity:Activity(){
   for((index,line) in routeLines.withIndex()){
    if(selectedId!=null && line.id!=selectedId)continue
    val pts=db.routePlaces(line,currentPlaces).map{Point(it.lat,it.lon)}
-   if(pts.size>1){routePolylines+=objects.addPolyline(Polyline(pts)).apply{setStrokeColor(colors[index%colors.size]);strokeWidth(if(line.id==selectedId)8f else 5f);zIndex=2f}}
+   if(pts.size>1){routePolylines+=objects.addPolyline(Polyline(pts)).apply{setStrokeColor(colors[index%colors.size]);setStrokeWidth(if(line.id==selectedId)8f else 5f);zIndex=2f}}
   }
  }
 
@@ -312,14 +312,6 @@ class MainActivity:Activity(){
   try{startActivity(Intent(Intent.ACTION_VIEW,web))}catch(_:Exception){Toast.makeText(this,"Не удалось открыть Яндекс Карты",Toast.LENGTH_LONG).show()}
  }
 
-private fun openMapInBrowser(p:Place){
-  val url="https://yandex.ru/maps/?ll="+p.lon+"%2C"+p.lat+"&z=16&text="+Uri.encode(p.name)
-  try{
-   startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
-  }catch(_:Exception){
-   Toast.makeText(this,"Приложение карт не установлено",Toast.LENGTH_LONG).show()
-  }
-}
 
  override fun onStart(){super.onStart();MapKitFactory.getInstance().onStart();mapView.onStart()}
  override fun onStop(){mapView.onStop();MapKitFactory.getInstance().onStop();super.onStop()}
