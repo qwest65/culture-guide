@@ -113,10 +113,47 @@ class MainActivity:Activity(){
  fun openMap(p:Place){startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${Uri.encode(p.name)})")))}
  fun mapHtml():String{
   val markers=currentPlaces.joinToString(","){ "{name:'${it.name.replace("'","\\\\'")}',lat:${it.lat},lon:${it.lon},cat:'${it.category}',address:'${it.address.replace("'","\\\\'")}'}" }
-  return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><style>html,body,#map{height:100%;margin:0}.leaflet-popup-content{font-size:15px}</style></head><body><div id="map"></div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
-var data=[$markers];var map=L.map('map').setView([54.0820,61.5596],14);L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);var layer=L.layerGroup().addTo(map);
-function draw(){layer.clearLayers();data.forEach(function(x,i){L.marker([x.lat,x.lon]).addTo(layer).bindPopup('<b>'+(i+1)+'. '+x.name+'</b><br>'+x.cat+'<br>'+x.address);});}
-var userLayer=L.layerGroup().addTo(map);function showUser(lat,lon,center){userLayer.clearLayers();L.circleMarker([lat,lon],{radius:9,weight:3,fillOpacity:0.8}).addTo(userLayer).bindPopup('Моё положение');if(center)map.setView([lat,lon],15);}function centerMap(lat,lon){map.setView([lat,lon],16);}function showRoute(points){draw();if(points.length>1){L.polyline(points,{weight:6}).addTo(map);map.fitBounds(points,{padding:[20,20]});}}draw();
+  return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1">
+<link href="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.css" rel="stylesheet">
+<style>html,body,#map{height:100%;margin:0} .maplibregl-popup-content{font-size:15px}</style>
+</head><body><div id="map"></div>
+<script src="https://unpkg.com/maplibre-gl@5/dist/maplibre-gl.js"></script><script>
+var data=[$markers];
+var map=new maplibregl.Map({container:'map',style:'https://tiles.openfreemap.org/styles/liberty',center:[61.5596,54.0820],zoom:14});
+map.addControl(new maplibregl.NavigationControl(),'top-left');
+var markers=[];
+var userMarker=null;
+var pendingRoute=null;
+function draw(){
+  markers.forEach(function(m){m.remove();}); markers=[];
+  data.forEach(function(x,i){
+    var el=document.createElement('div');
+    el.style.width='22px';el.style.height='22px';el.style.borderRadius='50%';
+    el.style.background='#3388ff';el.style.border='3px solid white';el.style.boxShadow='0 1px 4px #555';
+    var m=new maplibregl.Marker({element:el}).setLngLat([x.lon,x.lat])
+      .setPopup(new maplibregl.Popup({offset:18}).setHTML('<b>'+(i+1)+'. '+x.name+'</b><br>'+x.cat+'<br>'+x.address)).addTo(map);
+    markers.push(m);
+  });
+}
+function installRoute(){
+  if(!map.isStyleLoaded())return;
+  if(!map.getSource('route')){
+    map.addSource('route',{type:'geojson',data:{type:'Feature',geometry:{type:'LineString',coordinates:[]}}});
+    map.addLayer({id:'route-line',type:'line',source:'route',paint:{'line-color':'#315efb','line-width':6,'line-opacity':0.9}});
+  }
+  if(pendingRoute)map.getSource('route').setData({type:'Feature',geometry:{type:'LineString',coordinates:pendingRoute.map(function(p){return [p[1],p[0]];})}});
+}
+map.on('load',function(){draw();installRoute();});
+function showUser(lat,lon,center){
+  if(userMarker)userMarker.remove();
+  userMarker=new maplibregl.Marker({color:'#e53935'}).setLngLat([lon,lat]).setPopup(new maplibregl.Popup({offset:18}).setText('Моё положение')).addTo(map);
+  if(center)map.flyTo({center:[lon,lat],zoom:15});
+}
+function centerMap(lat,lon){map.flyTo({center:[lon,lat],zoom:16});}
+function showRoute(points){
+  pendingRoute=points; installRoute();
+  if(points.length>1){var bounds=new maplibregl.LngLatBounds();points.forEach(function(p){bounds.extend([p[1],p[0]]);});map.fitBounds(bounds,{padding:30});}
+}
 </script></body></html>"""
  }
 }
