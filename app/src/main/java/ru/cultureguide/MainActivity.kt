@@ -164,7 +164,7 @@ class MetroView(c:Context):View(c){
   for(line in lines)for((i,id) in line.placeIds.withIndex()){ranks.getOrPut(id){mutableListOf()}.add(i);maxRank=max(maxRank,i)}
   val xById=HashMap<Long,Float>()
   val left=70f;val right=(width-70f).coerceAtLeast(left+1f);val usable=(right-left)
-  for((id,rs) in ranks){val avg=rs.average();xById[id]=left+if(maxRank==0)0.5f else avg/maxRank.toFloat()*usable}
+  for((id,rs) in ranks){val avg=rs.average();xById[id]=left+if(maxRank==0)0.5f else (avg/maxRank.toFloat()*usable).toFloat()}
   val top=48f;val legendH=if(lines.size<=2)54f else 76f
   val bottom=(height-legendH).coerceAtLeast(top+40f)
   val laneGap=if(lines.size<=1)0f else (bottom-top)/(lines.size-1).toFloat()
@@ -257,7 +257,7 @@ class MainActivity:Activity(){
   val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,8,14,8)
   val title=TextView(this);title.text="Культурный маршрут · v${BuildConfig.VERSION_NAME}";title.textSize=23f;title.setPadding(0,0,0,4);root.addView(title)
   citySpinner=Spinner(this);root.addView(citySpinner,LinearLayout.LayoutParams(-1,48))
-  searchBox=EditText(this);searchBox.hint="Поиск объекта";searchBox.singleLine=true;root.addView(searchBox,LinearLayout.LayoutParams(-1,52))
+  searchBox=EditText(this);searchBox.hint="Поиск объекта";searchBox.setSingleLine(true);root.addView(searchBox,LinearLayout.LayoutParams(-1,52))
   val tabsScroll=HorizontalScrollView(this)
   val tabs=LinearLayout(this);tabs.orientation=LinearLayout.HORIZONTAL
   val schemeBtn=Button(this);schemeBtn.text="Схема"
