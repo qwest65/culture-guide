@@ -117,6 +117,35 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,4){
    bindLong(1,cityId);bindString(2,name);bindString(3,category);bindString(4,description);bindString(5,address);bindDouble(6,lat);bindDouble(7,lon);bindString(8,sourceUrl);bindString(9,imageUrl)
   }.executeInsert()
  }
+ fun createRoute(cityId:Long,name:String,description:String):Long{
+  return writableDatabase.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)").apply{
+   bindLong(1,cityId);bindString(2,name);bindString(3,description)
+  }.executeInsert()
+ }
+ fun updateRoute(routeId:Long,name:String,description:String){
+  writableDatabase.compileStatement("UPDATE routes SET name=?,description=? WHERE id=?").apply{
+   bindString(1,name);bindString(2,description);bindLong(3,routeId)
+  }.executeUpdateDelete()
+ }
+ fun deleteRoute(routeId:Long){
+  writableDatabase.beginTransaction()
+  try{
+   writableDatabase.delete("route_places","route_id=?",arrayOf(routeId.toString()))
+   writableDatabase.delete("routes","id=?",arrayOf(routeId.toString()))
+   writableDatabase.setTransactionSuccessful()
+  }finally{writableDatabase.endTransaction()}
+ }
+ fun saveRoutePlaces(routeId:Long,placeIds:List<Long>){
+  writableDatabase.beginTransaction()
+  try{
+   writableDatabase.delete("route_places","route_id=?",arrayOf(routeId.toString()))
+   val stmt=writableDatabase.compileStatement("INSERT INTO route_places(route_id,place_id,station_order) VALUES(?,?,?)")
+   placeIds.forEachIndexed{index,placeId->
+    stmt.bindLong(1,routeId);stmt.bindLong(2,placeId);stmt.bindLong(3,index.toLong());stmt.executeInsert()
+   }
+   writableDatabase.setTransactionSuccessful()
+  }finally{writableDatabase.endTransaction()}
+ }
  fun exportJson():String{
   val root=JSONObject().put("format","cultureguide").put("version",1)
   val jc=JSONArray();val jp=JSONArray();val jr=JSONArray();val jrp=JSONArray()
@@ -339,7 +368,7 @@ class MainActivity:Activity(){
   tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,58))
   val adminRow=LinearLayout(this);adminRow.orientation=LinearLayout.HORIZONTAL
   fun adminButton(text:String,onClick:()->Unit){val b=Button(this);b.text=text;b.setAllCaps(false);b.setOnClickListener{onClick()};adminRow.addView(b,LinearLayout.LayoutParams(0,50,1f))}
-  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Обновить каталог"){syncRemoteCatalog()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
+  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Линия"){showRouteEditor(null)};adminButton("Обновить каталог"){syncRemoteCatalog()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
   val mapLayer=FrameLayout(this)
   mapView=MapView(this)
   schemeView=MetroView(this)
@@ -420,6 +449,56 @@ class MainActivity:Activity(){
   val name=EditText(this);name.hint="Город";val country=EditText(this);country.hint="Страна";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,country,lat,lon).forEach{box.addView(it)}
   AlertDialog.Builder(this).setTitle("Добавить город").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addCity(name.text.toString().trim(),country.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble());loadCities();refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
  }
+ private fun showRouteEditor(route:RouteLine?){
+  if(cityId==0L)return
+  val allPlaces=currentPlaces
+  if(allPlaces.isEmpty()){
+   Toast.makeText(this,"Сначала добавьте объекты города",Toast.LENGTH_LONG).show()
+   return
+  }
+  val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(20,8,20,0)
+  val name=EditText(this);name.hint="Название линии";name.setSingleLine(true);name.setText(route?.name.orEmpty())
+  val description=EditText(this);description.hint="Описание";description.setText(route?.description.orEmpty());description.minLines=2
+  box.addView(name);box.addView(description)
+  val order=(route?.placeIds.orEmpty()+allPlaces.map{it.id}.filter{it !in route?.placeIds.orEmpty()}).toMutableList()
+  val checked=allPlaces.associate{it.id to (route?.placeIds?.contains(it.id)==true)}.toMutableMap()
+  val rows=LinearLayout(this);rows.orientation=LinearLayout.VERTICAL
+  val scroll=ScrollView(this);scroll.addView(rows);box.addView(scroll,LinearLayout.LayoutParams(-1,0,1f))
+  fun render(){
+   rows.removeAllViews()
+   order.forEachIndexed{index,id->
+    val place=allPlaces.firstOrNull{it.id==id}?:return@forEachIndexed
+    val row=LinearLayout(this);row.orientation=LinearLayout.HORIZONTAL;row.gravity=android.view.Gravity.CENTER_VERTICAL
+    val cb=CheckBox(this);cb.text=place.name;cb.isChecked=checked[id]==true;cb.setOnCheckedChangeListener{_,value->checked[id]=value}
+    row.addView(cb,LinearLayout.LayoutParams(0,52,1f))
+    val up=Button(this);up.text="↑";up.setAllCaps(false);up.setOnClickListener{
+     if(index>0){val v=order.removeAt(index);order.add(index-1,v);render()}
+    }
+    val down=Button(this);down.text="↓";down.setAllCaps(false);down.setOnClickListener{
+     if(index<order.lastIndex){val v=order.removeAt(index);order.add(index+1,v);render()}
+    }
+    row.addView(up,LinearLayout.LayoutParams(48,48));row.addView(down,LinearLayout.LayoutParams(48,48));rows.addView(row)
+   }
+  }
+  render()
+  val builder=AlertDialog.Builder(this).setTitle(if(route==null)"Новая линия" else "Редактировать линию").setView(box)
+    .setNegativeButton("Отмена",null)
+    .setPositiveButton("Сохранить"){_,_->
+     try{
+      val title=name.text.toString().trim()
+      if(title.isBlank())throw IllegalArgumentException("Введите название линии")
+      val desc=description.text.toString().trim()
+      val id=if(route==null)db.createRoute(cityId,title,desc) else {db.updateRoute(route.id,title,desc);route.id}
+      db.saveRoutePlaces(id,order.filter{checked[it]==true})
+      refresh();showLines()
+     }catch(e:Exception){Toast.makeText(this,"Не удалось сохранить линию: "+(e.message?:"ошибка"),Toast.LENGTH_LONG).show()}
+    }
+  if(route!=null)builder.setNeutralButton("Удалить"){_,_->
+   db.deleteRoute(route.id);refresh();showLines()
+  }
+  builder.show()
+ }
+
  private fun showAddPlace(){
   val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
   val name=EditText(this);name.hint="Название";val cat=EditText(this);cat.hint="Категория";val desc=EditText(this);desc.hint="Описание";val address=EditText(this);address.hint="Адрес";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";val source=EditText(this);source.hint="Источник (URL)";val image=EditText(this);image.hint="Изображение (URL)";listOf(name,cat,desc,address,lat,lon,source,image).forEach{box.addView(it)}
@@ -484,9 +563,10 @@ class MainActivity:Activity(){
   for((index,line) in routeLines.withIndex()){
    val t=TextView(this);t.text=(index+1).toString()+". "+line.name+"\n"+line.description+"\n"+line.placeIds.size+" объектов";t.textSize=16f;t.setPadding(8,12,8,12)
    t.setOnClickListener{selectRoute(line)}
+   t.setOnLongClickListener{showRouteEditor(line);true}
    list.addView(t)
   }
-  status.text=routeLines.size.toString()+" тематических линий · повторяющиеся объекты являются пересечениями"
+  status.text=routeLines.size.toString()+" тематических линий · долгий тап — редактирование"
  }
 
  private fun selectRoute(line:RouteLine){
