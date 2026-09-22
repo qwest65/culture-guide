@@ -29,6 +29,7 @@ import com.yandex.mapkit.map.PlacemarkMapObject
 import com.yandex.mapkit.mapview.MapView
 import com.yandex.runtime.image.ImageProvider
 import kotlin.math.*
+import java.lang.ref.WeakReference
 
 data class Place(val name:String,val category:String,val description:String,val address:String,val lat:Double,val lon:Double)
 
@@ -145,14 +146,14 @@ class MainActivity:Activity(){
   val objects=mapView.mapWindow.map.mapObjects
   objects.clear();routePolyline=null;userPlacemark=null
   currentPlaces.forEach{place->
-   objects.addPlacemark().apply{geometry=Point(place.lat,place.lon);setIcon(pinProvider);userData=place;addTapListener(placeTapListener)}
+   objects.addPlacemark().apply{geometry=Point(place.lat,place.lon);setIcon(pinProvider);userData=place;addTapListener(WeakReference(placeTapListener))}
   }
   moveCamera(54.0820,61.5596,14f)
  }
 
  private fun showUserLocation(lat:Double,lon:Double,center:Boolean){
   val objects=mapView.mapWindow.map.mapObjects
-  if(userPlacemark==null){userPlacemark=objects.addPlacemark().apply{setIcon(userPinProvider);addTapListener(userTapListener)}}
+  if(userPlacemark==null){userPlacemark=objects.addPlacemark().apply{setIcon(userPinProvider);addTapListener(WeakReference(userTapListener))}}
   userPlacemark?.geometry=Point(lat,lon);userPlacemark?.zIndex=10f
   if(center)moveCamera(lat,lon,16f)
  }
