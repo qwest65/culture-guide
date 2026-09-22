@@ -641,7 +641,8 @@ class MainActivity:Activity(){
   selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=emptyList();schemeView.invalidate()
   if(schemeMode)showScheme() else {showMap();drawRoutesOnMap(line.id)};list.removeAllViews()
-  val head=TextView(this);head.text=line.name+"\n"+line.description;head.textSize=18f;head.setPadding(8,10,8,10);list.addView(head)
+  val head=TextView(this);head.text=line.name+"\n"+line.description+"\n"+routePlaces.size+" остановок · ≈ "+formatDistance(routePlaces)+" км по прямой между остановками";head.textSize=18f;head.setPadding(8,10,8,6);list.addView(head)
+  val start=Button(this);start.text="Начать маршрут";start.setAllCaps(false);start.setOnClickListener{buildRoute()};list.addView(start,LinearLayout.LayoutParams(-1,52))
   routePlaces.forEachIndexed{index,p->
    val t=TextView(this);t.text=(index+1).toString()+". "+p.name+"\n"+p.category+"\n"+p.address;t.textSize=16f;t.setPadding(8,10,8,10);t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)};t.setOnLongClickListener{showPlaceEditor(p);true};list.addView(t)
   }
@@ -696,6 +697,13 @@ class MainActivity:Activity(){
  }
 
  private fun moveCamera(lat:Double,lon:Double,zoom:Float){mapView.mapWindow.map.move(CameraPosition(Point(lat,lon),zoom,0f,0f))}
+
+ private fun formatDistance(places:List<Place>):String{
+  if(places.size<2)return "0.0"
+  var meters=0.0
+  places.zipWithNext().forEach{(a,b)->meters+=dist(a,b)}
+  return "%.1f".format(java.util.Locale.US,meters/1000.0)
+ }
 
  private fun requestLocation(){
   if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED){
@@ -782,12 +790,27 @@ class MainActivity:Activity(){
  private fun showPlace(p:Place){
   val lines=db.routesForPlace(cityId,p.id)
   val lineText=if(lines.isEmpty())"Линии: —" else "Линии: "+lines.joinToString(", "){it.name}
-  val box=TextView(this)
-  box.text=p.category+"\n\n"+p.description+"\n\nАдрес: "+p.address+"\n\nКоординаты: "+"%.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)+"\n\nИсточник: "+(p.sourceUrl.ifBlank{"—"})+"\nИзображение: "+(p.imageUrl.ifBlank{"—"})+"\n\n"+lineText
-  box.textSize=16f;box.setPadding(28,8,28,8)
+  val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(28,8,28,8)
+  val info=TextView(this)
+  info.text=p.category+"\n\n"+p.description+"\n\nАдрес: "+p.address+"\n\nКоординаты: "+"%.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)+"\n\n"+lineText
+  info.textSize=16f;box.addView(info)
+  val actions=LinearLayout(this);actions.orientation=LinearLayout.HORIZONTAL
+  if(p.sourceUrl.isNotBlank()){
+   val source=Button(this);source.text="Источник";source.setAllCaps(false);source.setOnClickListener{openUrl(p.sourceUrl)}
+   actions.addView(source,LinearLayout.LayoutParams(0,52,1f))
+  }
+  if(p.imageUrl.isNotBlank()){
+   val image=Button(this);image.text="Изображение";image.setAllCaps(false);image.setOnClickListener{openUrl(p.imageUrl)}
+   actions.addView(image,LinearLayout.LayoutParams(0,52,1f))
+  }
+  if(actions.childCount>0)box.addView(actions)
   val builder=AlertDialog.Builder(this).setTitle(p.name).setView(box).setPositiveButton("Открыть карту"){_,_->openMap(p)}.setNegativeButton("Закрыть",null)
   if(lines.size>1)builder.setNeutralButton("Показать пересечения"){_,_->showLines()}
   builder.show()
+ }
+
+ private fun openUrl(value:String){
+  try{startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(value)))}catch(_:Exception){Toast.makeText(this,"Не удалось открыть ссылку",Toast.LENGTH_LONG).show()}
  }
 
  private fun openMap(p:Place){
