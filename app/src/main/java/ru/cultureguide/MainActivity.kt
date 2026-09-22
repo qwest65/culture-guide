@@ -136,6 +136,7 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
   }finally{db.endTransaction()}
  }
  fun cities():List<City>{val r=readableDatabase.rawQuery("SELECT id,name,country,lat,lon FROM cities ORDER BY name",null);val a=mutableListOf<City>();r.use{while(it.moveToNext())a+=City(it.getLong(0),it.getString(1),it.getString(2),it.getDouble(3),it.getDouble(4))};return a}
+ fun categories(city:Long):List<String>{val r=readableDatabase.rawQuery("SELECT DISTINCT category FROM places WHERE city_id=? ORDER BY category",arrayOf(city.toString()));val a=mutableListOf("Все");r.use{while(it.moveToNext())a+=it.getString(0)};return a}
  fun places(city:Long):List<Place>{val r=readableDatabase.rawQuery("SELECT id,name,category,description,address,lat,lon FROM places WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<Place>();r.use{while(it.moveToNext())a+=Place(it.getLong(0),it.getString(1),it.getString(2),it.getString(3),it.getString(4),it.getDouble(5),it.getDouble(6))};return a}
  fun routes(city:Long):List<RouteLine>{val r=readableDatabase.rawQuery("SELECT id,name,description FROM routes WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<RouteLine>();r.use{while(it.moveToNext()){val id=it.getLong(0);val q=readableDatabase.rawQuery("SELECT place_id FROM route_places WHERE route_id=? ORDER BY station_order",arrayOf(id.toString()));val ids=mutableListOf<Long>();q.use{while(it.moveToNext())ids+=it.getLong(0)};a+=RouteLine(id,it.getString(1),it.getString(2),ids)}};return a}
  fun routesForPlace(city:Long,placeId:Long):List<RouteLine>{return routes(city).filter{placeId in it.placeIds}}
@@ -219,6 +220,9 @@ class MainActivity:Activity(){
  private var routePlaces:List<Place> = emptyList()
  private lateinit var citySpinner:Spinner
  private lateinit var searchBox:EditText
+ private lateinit var categorySpinner:Spinner
+ private var selectedCategory="Все"
+ private var schemeMode=false
  private val CREATE_JSON=2001
  private val OPEN_JSON=2002
  private lateinit var searchManager:SearchManager
@@ -257,7 +261,9 @@ class MainActivity:Activity(){
   val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,8,14,8)
   val title=TextView(this);title.text="Культурный маршрут · v${BuildConfig.VERSION_NAME}";title.textSize=23f;title.setPadding(0,0,0,4);root.addView(title)
   citySpinner=Spinner(this);root.addView(citySpinner,LinearLayout.LayoutParams(-1,48))
-  searchBox=EditText(this);searchBox.hint="Поиск объекта";searchBox.setSingleLine(true);root.addView(searchBox,LinearLayout.LayoutParams(-1,52))
+  val searchRow=LinearLayout(this);searchRow.orientation=LinearLayout.HORIZONTAL
+  searchBox=EditText(this);searchBox.hint="Поиск объекта";searchBox.setSingleLine(true);searchRow.addView(searchBox,LinearLayout.LayoutParams(0,52,1f))
+  categorySpinner=Spinner(this);searchRow.addView(categorySpinner,LinearLayout.LayoutParams(145,52));root.addView(searchRow)
   val tabsScroll=HorizontalScrollView(this)
   val tabs=LinearLayout(this);tabs.orientation=LinearLayout.HORIZONTAL
   val schemeBtn=Button(this);schemeBtn.text="Схема"
@@ -290,6 +296,7 @@ class MainActivity:Activity(){
   linesBtn.setOnClickListener{showLines()}
   routeBtn.setOnClickListener{buildRoute()}
   gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{showMap();showUserLocation(it.latitude,it.longitude,true)}}
+  categorySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){val values=db.categories(cityId);if(position in values.indices){selectedCategory=values[position];renderPlaces(searchBox.text.toString())}};override fun onNothingSelected(parent:AdapterView<*>) {}}
   searchBox.addTextChangedListener(object:android.text.TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){renderPlaces(s?.toString().orEmpty())};override fun afterTextChanged(s:android.text.Editable?){}})
   citySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
    override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){if(position in cities.indices && cityId!=cities[position].id){cityId=cities[position].id;selectedRoute=null;refresh()}}
@@ -347,7 +354,7 @@ class MainActivity:Activity(){
  }
 
  private fun showScheme(){
-  mapView.visibility=View.VISIBLE;schemeView.visibility=View.VISIBLE
+  schemeMode=true;mapView.visibility=View.GONE;schemeView.visibility=View.VISIBLE
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=emptyList();schemeView.invalidate()
   list.removeAllViews()
   val title=TextView(this);title.text="Схема культурных маршрутов";title.textSize=20f;title.setPadding(8,8,8,8);list.addView(title)
@@ -356,7 +363,7 @@ class MainActivity:Activity(){
  }
 
  private fun showMap(){
-  mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE
+  schemeMode=false;mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE
   status.text=currentPlaces.size.toString()+" объектов · карта"
  }
 
@@ -375,7 +382,7 @@ class MainActivity:Activity(){
  private fun selectRoute(line:RouteLine){
   selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=emptyList();schemeView.invalidate()
-  drawRoutesOnMap(line.id);list.removeAllViews()
+  if(schemeMode)showScheme() else {showMap();drawRoutesOnMap(line.id)};list.removeAllViews()
   val head=TextView(this);head.text=line.name+"\n"+line.description;head.textSize=18f;head.setPadding(8,10,8,10);list.addView(head)
   routePlaces.forEachIndexed{index,p->
    val t=TextView(this);t.text=(index+1).toString()+". "+p.name+"\n"+p.category+"\n"+p.address;t.textSize=16f;t.setPadding(8,10,8,10);t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)};list.addView(t)
@@ -384,11 +391,12 @@ class MainActivity:Activity(){
  }
 
  private fun refresh(){
-  routeLines=db.routes(cityId);currentPlaces=db.places(cityId);selectedRoute=null;routePlaces=emptyList()
+  routeLines=db.routes(cityId);currentPlaces=db.places(cityId);selectedRoute=null;routePlaces=emptyList();selectedCategory="Все"
+  val categories=db.categories(cityId);categorySpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,categories).apply{setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)}
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=null;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap();renderPlaces(searchBox.text.toString());showScheme()
  }
  private fun renderPlaces(query:String){
-  val q=query.trim().lowercase();val filtered=currentPlaces.filter{q.isEmpty()||it.name.lowercase().contains(q)||it.category.lowercase().contains(q)||it.address.lowercase().contains(q)}
+  val q=query.trim().lowercase();val filtered=currentPlaces.filter{(selectedCategory=="Все"||it.category==selectedCategory)&&(q.isEmpty()||it.name.lowercase().contains(q)||it.category.lowercase().contains(q)||it.address.lowercase().contains(q))}
   list.removeAllViews()
   filtered.forEachIndexed{i,z->{val t=TextView(this);t.text="${i+1}. ${z.name}\n${z.category}\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12);t.setOnClickListener{showMap();showPlace(z);moveCamera(z.lat,z.lon,16f)};list.addView(t)}}
   status.text=filtered.size.toString()+" объектов · "+if(q.isEmpty())"каталог" else "поиск"
