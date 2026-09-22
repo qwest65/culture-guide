@@ -21,8 +21,8 @@ android {
         applicationId = "ru.cultureguide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
         buildConfigField("String", "MAPKIT_API_KEY", "\"$mapkitApiKey\"")
     }
     buildFeatures { buildConfig = true }
@@ -33,5 +33,5 @@ android {
     kotlinOptions { jvmTarget = "17" }
 }
 dependencies {
-    implementation("com.yandex.android:maps.mobile:4.45.0-lite")
+    implementation("com.yandex.android:maps.mobile:4.45.0-full")
 }
