@@ -1,6 +1,7 @@
 package ru.cultureguide
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.os.Bundle
 import android.graphics.*
 import android.view.View
