@@ -31,12 +31,16 @@ import com.yandex.runtime.image.ImageProvider
 import kotlin.math.*
 import java.lang.ref.WeakReference
 
-data class Place(val name:String,val category:String,val description:String,val address:String,val lat:Double,val lon:Double)
+data class City(val id:Long,val name:String,val country:String,val lat:Double,val lon:Double)
+data class Place(val id:Long,val name:String,val category:String,val description:String,val address:String,val lat:Double,val lon:Double)
+data class RouteLine(val id:Long,val name:String,val description:String,val placeIds:List<Long>)
 
-class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,2){
+class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
  override fun onCreate(db:SQLiteDatabase){
-  db.execSQL("CREATE TABLE cities(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT,country TEXT,lat REAL,lon REAL)")
-  db.execSQL("CREATE TABLE places(id INTEGER PRIMARY KEY AUTOINCREMENT,city_id INTEGER,name TEXT,category TEXT,description TEXT,address TEXT,lat REAL,lon REAL)")
+  db.execSQL("CREATE TABLE cities(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,country TEXT NOT NULL,lat REAL NOT NULL,lon REAL NOT NULL)")
+  db.execSQL("CREATE TABLE places(id INTEGER PRIMARY KEY AUTOINCREMENT,city_id INTEGER NOT NULL,name TEXT NOT NULL,category TEXT NOT NULL,description TEXT NOT NULL,address TEXT NOT NULL,lat REAL NOT NULL,lon REAL NOT NULL)")
+  db.execSQL("CREATE TABLE routes(id INTEGER PRIMARY KEY AUTOINCREMENT,city_id INTEGER NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL)")
+  db.execSQL("CREATE TABLE route_places(route_id INTEGER NOT NULL,place_id INTEGER NOT NULL,station_order INTEGER NOT NULL,PRIMARY KEY(route_id,place_id))")
   val city=db.compileStatement("INSERT INTO cities(name,country,lat,lon) VALUES('Троицк','Россия',54.0820,61.5596)").executeInsert()
   val ps=listOf(
    arrayOf("Троицкий краеведческий музей","Музеи","Городской краеведческий музей.","ул. Ленина, 70",54.082118,61.559624),
@@ -50,11 +54,43 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,2){
    arrayOf("Водонапорная башня","Архитектура","Памятник архитектуры 1927 года, городская высотная доминанта.","ул. Гагарина, 22А",54.080950,61.533317),
    arrayOf("Памятник И. И. Неплюеву","Памятники","Памятник основателю Троицка, установлен в 2001 году.","ул. Гагарина",54.0820,61.5620)
   )
-  val s=db.compileStatement("INSERT INTO places(city_id,name,category,description,address,lat,lon) VALUES(?,?,?,?,?,?,?)")
-  for(p in ps){s.bindLong(1,city);s.bindString(2,p[0] as String);s.bindString(3,p[1] as String);s.bindString(4,p[2] as String);s.bindString(5,p[3] as String);s.bindDouble(6,p[4] as Double);s.bindDouble(7,p[5] as Double);s.executeInsert()}
+  val ins=db.compileStatement("INSERT INTO places(city_id,name,category,description,address,lat,lon) VALUES(?,?,?,?,?,?,?)")
+  for(p in ps){ins.bindLong(1,city);ins.bindString(2,p[0] as String);ins.bindString(3,p[1] as String);ins.bindString(4,p[2] as String);ins.bindString(5,p[3] as String);ins.bindDouble(6,p[4] as Double);ins.bindDouble(7,p[5] as Double);ins.executeInsert()}
+  seedRoutes(db,city)
  }
- override fun onUpgrade(db:SQLiteDatabase,o:Int,n:Int){db.execSQL("DROP TABLE IF EXISTS places");db.execSQL("DROP TABLE IF EXISTS cities");onCreate(db)}
- fun places(city:Long):List<Place>{val r=readableDatabase.rawQuery("SELECT name,category,description,address,lat,lon FROM places WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<Place>();r.use{while(it.moveToNext())a+=Place(it.getString(0),it.getString(1),it.getString(2),it.getString(3),it.getDouble(4),it.getDouble(5))};return a}
+ override fun onUpgrade(db:SQLiteDatabase,oldVersion:Int,newVersion:Int){
+  if(oldVersion<3){
+   db.execSQL("CREATE TABLE IF NOT EXISTS routes(id INTEGER PRIMARY KEY AUTOINCREMENT,city_id INTEGER NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL)")
+   db.execSQL("CREATE TABLE IF NOT EXISTS route_places(route_id INTEGER NOT NULL,place_id INTEGER NOT NULL,station_order INTEGER NOT NULL,PRIMARY KEY(route_id,place_id))")
+   val c=db.rawQuery("SELECT id FROM cities ORDER BY id LIMIT 1",null)
+   c.use{if(it.moveToFirst())seedRoutes(db,it.getLong(0))}
+  }
+ }
+ private fun seedRoutes(db:SQLiteDatabase,cityId:Long){
+  val count=db.compileStatement("SELECT COUNT(*) FROM routes WHERE city_id=?").apply{bindLong(1,cityId)}.simpleQueryForLong()
+  if(count>0)return
+  val routeData=listOf(
+   arrayOf("Исторический центр","Главные исторические объекты центра города.",listOf("Памятный камень Троицкой крепости","Свято-Троицкий собор","Центральная площадь","Торговые ряды","Троицкий краеведческий музей","Пассаж братьев Яушевых","Памятник Ф. Н. Плевако")),
+   arrayOf("Архитектура и купечество","Архитектурные и торговые памятники города.",listOf("Торговые ряды","Пассаж братьев Яушевых","Мечеть Гатауллы муллы","Водонапорная башня","Троицкий краеведческий музей")),
+   arrayOf("История города","Точки, связанные с основанием и развитием Троицка.",listOf("Памятный камень Троицкой крепости","Центральная площадь","Памятник И. И. Неплюеву","Торговые ряды","Свято-Троицкий собор"))
+  )
+  val routeStmt=db.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)")
+  val linkStmt=db.compileStatement("INSERT INTO route_places(route_id,place_id,station_order) VALUES(?,?,?)")
+  for(r in routeData){
+   routeStmt.bindLong(1,cityId);routeStmt.bindString(2,r[0] as String);routeStmt.bindString(3,r[1] as String)
+   val routeId=routeStmt.executeInsert()
+   val names=r[2] as List<*>
+   for((order,name) in names.withIndex()){
+    val q=db.rawQuery("SELECT id FROM places WHERE city_id=? AND name=? LIMIT 1",arrayOf(cityId.toString(),name as String))
+    q.use{if(it.moveToFirst()){linkStmt.bindLong(1,routeId);linkStmt.bindLong(2,it.getLong(0));linkStmt.bindLong(3,order);linkStmt.executeInsert()}}
+   }
+  }
+ }
+ fun cities():List<City>{val r=readableDatabase.rawQuery("SELECT id,name,country,lat,lon FROM cities ORDER BY name",null);val a=mutableListOf<City>();r.use{while(it.moveToNext())a+=City(it.getLong(0),it.getString(1),it.getString(2),it.getDouble(3),it.getDouble(4))};return a}
+ fun places(city:Long):List<Place>{val r=readableDatabase.rawQuery("SELECT id,name,category,description,address,lat,lon FROM places WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<Place>();r.use{while(it.moveToNext())a+=Place(it.getLong(0),it.getString(1),it.getString(2),it.getString(3),it.getString(4),it.getDouble(5),it.getDouble(6))};return a}
+ fun routes(city:Long):List<RouteLine>{val r=readableDatabase.rawQuery("SELECT id,name,description FROM routes WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<RouteLine>();r.use{while(it.moveToNext()){val id=it.getLong(0);val q=readableDatabase.rawQuery("SELECT place_id FROM route_places WHERE route_id=? ORDER BY station_order",arrayOf(id.toString()));val ids=mutableListOf<Long>();q.use{while(it.moveToNext())ids+=it.getLong(0)};a+=RouteLine(id,it.getString(1),it.getString(2),ids)}};return a}
+ fun routesForPlace(city:Long,placeId:Long):List<RouteLine>{return routes(city).filter{placeId in it.placeIds}}
+ fun routePlaces(route:RouteLine,all:List<Place>):List<Place>{val byId=all.associateBy{it.id};return route.placeIds.mapNotNull{byId[it]}}
 }
 
 fun dist(a:Place,b:Place):Double{val r=6371.0088;val p1=Math.toRadians(a.lat);val p2=Math.toRadians(b.lat);val dp=Math.toRadians(b.lat-a.lat);val dl=Math.toRadians(b.lon-a.lon);val h=sin(dp/2).pow(2)+cos(p1)*cos(p2)*sin(dl/2).pow(2);return 2*r*asin(sqrt(h))}
@@ -84,9 +120,15 @@ class MainActivity:Activity(){
  private lateinit var status:TextView
  private lateinit var locationManager:LocationManager
  private var cityId=1L
+ private var cities:List<City> = emptyList()
+ private var routeLines:List<RouteLine> = emptyList()
+ private var selectedRoute:RouteLine?=null
  private var currentPlaces:List<Place> = emptyList()
+ private var routePlaces:List<Place> = emptyList()
+ private lateinit var citySpinner:Spinner
  private var lastLocation:Location?=null
  private var routePolyline:MapObject?=null
+ private val routePolylines=mutableListOf<MapObject>()
  private var userPlacemark:PlacemarkMapObject?=null
  private val pinProvider by lazy{ImageProvider.fromResource(this,R.drawable.ic_map_pin)}
  private val userPinProvider by lazy{ImageProvider.fromResource(this,R.drawable.ic_user_pin)}
@@ -106,29 +148,68 @@ class MainActivity:Activity(){
   MapKitFactory.initialize(this)
   db=Db(this)
   locationManager=getSystemService(Context.LOCATION_SERVICE) as LocationManager
-  ui();refresh();requestLocation()
+  ui();loadCities();refresh();requestLocation()
  }
 
  private fun ui(){
-  val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,10,14,8)
-  val title=TextView(this);title.text="ТроицкGuide";title.textSize=26f;root.addView(title)
-  val sub=TextView(this);sub.text="Троицк, Челябинская область";sub.textSize=16f;root.addView(sub)
+  val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,8,14,8)
+  val title=TextView(this);title.text="Культурный маршрут";title.textSize=25f;root.addView(title)
+  citySpinner=Spinner(this);root.addView(citySpinner,LinearLayout.LayoutParams(-1,48))
   val tabs=LinearLayout(this)
   val mapBtn=Button(this);mapBtn.text="Карта"
-  val schemeBtn=Button(this);schemeBtn.text="Схема"
+  val linesBtn=Button(this);linesBtn.text="Линии"
   val routeBtn=Button(this);routeBtn.text="Маршрут"
   val gpsBtn=Button(this);gpsBtn.text="GPS"
-  tabs.addView(mapBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(schemeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(routeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(gpsBtn,LinearLayout.LayoutParams(0,52,1f));root.addView(tabs)
+  tabs.addView(mapBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(linesBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(routeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(gpsBtn,LinearLayout.LayoutParams(0,52,1f));root.addView(tabs)
   mapView=MapView(this);root.addView(mapView,LinearLayout.LayoutParams(-1,0,1.35f))
   schemeView=MetroView(this);schemeView.visibility=View.GONE;root.addView(schemeView,LinearLayout.LayoutParams(-1,0,1.35f))
   status=TextView(this);status.textSize=15f;status.setPadding(4,5,4,5);root.addView(status)
   val sv=ScrollView(this);list=LinearLayout(this);list.orientation=LinearLayout.VERTICAL;sv.addView(list);root.addView(sv,LinearLayout.LayoutParams(-1,0,1f))
   setContentView(root)
-
-  mapBtn.setOnClickListener{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;status.text="Яндекс Карты · выбери объект на карте или в списке"}
-  schemeBtn.setOnClickListener{mapView.visibility=View.GONE;schemeView.visibility=View.VISIBLE;status.text="Схематическая карта маршрутов"}
+  mapBtn.setOnClickListener{showMap()}
+  linesBtn.setOnClickListener{showLines()}
   routeBtn.setOnClickListener{buildRoute()}
-  gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;showUserLocation(it.latitude,it.longitude,true)}}
+  gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{showMap();showUserLocation(it.latitude,it.longitude,true)}}
+  citySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
+   override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){if(position in cities.indices && cityId!=cities[position].id){cityId=cities[position].id;selectedRoute=null;refresh()}}
+   override fun onNothingSelected(parent:AdapterView<*>){}
+  }
+ }
+
+ private fun loadCities(){
+  cities=db.cities()
+  val labels=cities.map{it.name+", "+it.country}
+  citySpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,labels).apply{setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)}
+  val idx=cities.indexOfFirst{it.id==cityId}.coerceAtLeast(0)
+  citySpinner.setSelection(idx)
+ }
+
+ private fun showMap(){
+  mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE
+  status.text=currentPlaces.size.toString()+" объектов · карта"
+ }
+
+ private fun showLines(){
+  mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE
+  drawRoutesOnMap(selectedRoute?.id)
+  list.removeAllViews()
+  for((index,line) in routeLines.withIndex()){
+   val t=TextView(this);t.text=(index+1).toString()+". "+line.name+"\n"+line.description+"\n"+line.placeIds.size+" объектов";t.textSize=16f;t.setPadding(8,12,8,12)
+   t.setOnClickListener{selectRoute(line)}
+   list.addView(t)
+  }
+  status.text=routeLines.size.toString()+" тематических линий · повторяющиеся объекты являются пересечениями"
+ }
+
+ private fun selectRoute(line:RouteLine){
+  selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
+  schemeView.places=routePlaces;schemeView.route=routePlaces;schemeView.invalidate()
+  drawRoutesOnMap(line.id);list.removeAllViews()
+  val head=TextView(this);head.text=line.name+"\n"+line.description;head.textSize=18f;head.setPadding(8,10,8,10);list.addView(head)
+  routePlaces.forEachIndexed{index,p->
+   val t=TextView(this);t.text=(index+1).toString()+". "+p.name+"\n"+p.category+"\n"+p.address;t.textSize=16f;t.setPadding(8,10,8,10);t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)};list.addView(t)
+  }
+  status.text=line.name+" · "+routePlaces.size+" объектов"
  }
 
  private fun refresh(){
@@ -144,7 +225,7 @@ class MainActivity:Activity(){
 
  private fun drawPlacesOnMap(){
   val objects=mapView.mapWindow.map.mapObjects
-  objects.clear();routePolyline=null;userPlacemark=null
+  objects.clear();routePolyline=null;userPlacemark=null;routePolylines.clear()
   currentPlaces.forEachIndexed{index,place->
    objects.addPlacemark().apply{
     geometry=Point(place.lat,place.lon)
@@ -163,6 +244,18 @@ class MainActivity:Activity(){
   if(userPlacemark==null){userPlacemark=objects.addPlacemark().apply{setIcon(userPinProvider);addTapListener(WeakReference(userTapListener))}}
   userPlacemark?.geometry=Point(lat,lon);userPlacemark?.zIndex=10f
   if(center)moveCamera(lat,lon,16f)
+ }
+
+ private fun drawRoutesOnMap(selectedId:Long?){
+  val objects=mapView.mapWindow.map.mapObjects
+  routePolylines.forEach{objects.remove(it)}
+  routePolylines.clear()
+  val colors=listOf(Color.rgb(49,94,251),Color.rgb(235,87,87),Color.rgb(39,174,96),Color.rgb(155,89,182),Color.rgb(242,153,74))
+  for((index,line) in routeLines.withIndex()){
+   if(selectedId!=null && line.id!=selectedId)continue
+   val pts=db.routePlaces(line,currentPlaces).map{Point(it.lat,it.lon)}
+   if(pts.size>1){routePolylines+=objects.addPolyline(Polyline(pts)).apply{setStrokeColor(colors[index%colors.size]);strokeWidth(if(line.id==selectedId)8f else 5f);zIndex=2f}}
+  }
  }
 
  private fun moveCamera(lat:Double,lon:Double,zoom:Float){mapView.mapWindow.map.move(CameraPosition(Point(lat,lon),zoom,0f,0f))}
@@ -185,40 +278,39 @@ class MainActivity:Activity(){
  }
 
  private fun buildRoute(){
-  if(currentPlaces.isEmpty())return
-  val start=lastLocation?.let{location->currentPlaces.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}}?:currentPlaces.first()
-  val r=mutableListOf(start);val left=currentPlaces.filter{it!=start}.toMutableList()
+  val source=if(routePlaces.isNotEmpty())routePlaces else currentPlaces
+  if(source.isEmpty())return
+  val start=lastLocation?.let{location->source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}}?:source.first()
+  val r=mutableListOf(start);val left=source.filter{it.id!=start.id}.toMutableList()
   while(left.isNotEmpty()){val next=left.minBy{dist(r.last(),it)};r+=next;left.remove(next)}
-  schemeView.route=r;schemeView.invalidate()
+  routePlaces=r;schemeView.places=source;schemeView.route=r;schemeView.invalidate()
   routePolyline?.let{mapView.mapWindow.map.mapObjects.remove(it)}
   val points=r.map{Point(it.lat,it.lon)}
-  if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));strokeWidth=6f;zIndex=1f}}
+  if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));strokeWidth=7f;zIndex=3f}}
   lastLocation?.let{showUserLocation(it.latitude,it.longitude,false)}
-  mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE
+  showMap()
   val km=r.zipWithNext().sumOf{dist(it.first,it.second)}
-  status.text="Маршрут: %.1f км · ${r.size} объектов".format(java.util.Locale.US,km)
+  status.text="Маршрут по объектам: %.1f км · ".format(java.util.Locale.US,km)+r.size+" остановок"
  }
 
  private fun showPlace(p:Place){
+  val lines=db.routesForPlace(cityId,p.id)
+  val lineText=if(lines.isEmpty())"Линии: —" else "Линии: "+lines.joinToString(", "){it.name}
   val box=TextView(this)
-  box.text="${p.category}\n\n${p.description}\n\nАдрес: ${p.address}\n\nКоординаты: %.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)
+  box.text=p.category+"\n\n"+p.description+"\n\nАдрес: "+p.address+"\n\nКоординаты: "+"%.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)+"\n\n"+lineText
   box.textSize=16f;box.setPadding(28,8,28,8)
-  AlertDialog.Builder(this).setTitle(p.name).setView(box).setPositiveButton("Открыть карту"){_,_->openMap(p)}.setNegativeButton("Закрыть",null).show()
+  val builder=AlertDialog.Builder(this).setTitle(p.name).setView(box).setPositiveButton("Открыть карту"){_,_->openMap(p)}.setNegativeButton("Закрыть",null)
+  if(lines.size>1)builder.setNeutralButton("Показать пересечения"){_,_->showLines()}
+  builder.show()
  }
 
  private fun openMap(p:Place){
-  val geo=Uri.parse("geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${Uri.encode(p.name)})")
-  val intent=Intent(Intent.ACTION_VIEW,geo)
-  try{
-   if(intent.resolveActivity(packageManager)!=null){
-    startActivity(intent)
-   }else{
-    openMapInBrowser(p)
-   }
-  }catch(_:Exception){
-   openMapInBrowser(p)
-  }
-}
+  val yandex=Uri.parse("yandexmaps://maps.yandex.ru/?ll="+p.lon+","+p.lat+"&z=16&text="+Uri.encode(p.name))
+  val yandexIntent=Intent(Intent.ACTION_VIEW,yandex)
+  try{if(yandexIntent.resolveActivity(packageManager)!=null){startActivity(yandexIntent);return}}catch(_:Exception){}
+  val web=Uri.parse("https://yandex.ru/maps/?ll="+p.lon+"%2C"+p.lat+"&z=16&text="+Uri.encode(p.name))
+  try{startActivity(Intent(Intent.ACTION_VIEW,web))}catch(_:Exception){Toast.makeText(this,"Не удалось открыть Яндекс Карты",Toast.LENGTH_LONG).show()}
+ }
 
 private fun openMapInBrowser(p:Place){
   val url="https://yandex.ru/maps/?ll="+p.lon+"%2C"+p.lat+"&z=16&text="+Uri.encode(p.name)
