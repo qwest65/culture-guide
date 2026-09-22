@@ -15,6 +15,8 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.net.Uri
 import android.os.Bundle
+import org.json.JSONArray
+import org.json.JSONObject
 import android.view.View
 import android.widget.*
 import android.database.sqlite.SQLiteDatabase
@@ -85,6 +87,38 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
     q.use{if(it.moveToFirst()){linkStmt.bindLong(1,routeId);linkStmt.bindLong(2,it.getLong(0));linkStmt.bindLong(3,order.toLong());linkStmt.executeInsert()}}
    }
   }
+ }
+ fun addCity(name:String,country:String,lat:Double,lon:Double):Long{
+  return writableDatabase.compileStatement("INSERT INTO cities(name,country,lat,lon) VALUES(?,?,?,?)").apply{
+   bindString(1,name);bindString(2,country);bindDouble(3,lat);bindDouble(4,lon)
+  }.executeInsert()
+ }
+ fun addPlace(cityId:Long,name:String,category:String,description:String,address:String,lat:Double,lon:Double):Long{
+  return writableDatabase.compileStatement("INSERT INTO places(city_id,name,category,description,address,lat,lon) VALUES(?,?,?,?,?,?,?)").apply{
+   bindLong(1,cityId);bindString(2,name);bindString(3,category);bindString(4,description);bindString(5,address);bindDouble(6,lat);bindDouble(7,lon)
+  }.executeInsert()
+ }
+ fun exportJson():String{
+  val root=JSONObject().put("format","cultureguide").put("version",1)
+  val jc=JSONArray();val jp=JSONArray();val jr=JSONArray();val jrp=JSONArray()
+  readableDatabase.rawQuery("SELECT id,name,country,lat,lon FROM cities ORDER BY id",null).use{while(it.moveToNext()){jc.put(JSONObject().put("id",it.getLong(0)).put("name",it.getString(1)).put("country",it.getString(2)).put("lat",it.getDouble(3)).put("lon",it.getDouble(4)))}}
+  readableDatabase.rawQuery("SELECT id,city_id,name,category,description,address,lat,lon FROM places ORDER BY id",null).use{while(it.moveToNext()){jp.put(JSONObject().put("id",it.getLong(0)).put("city_id",it.getLong(1)).put("name",it.getString(2)).put("category",it.getString(3)).put("description",it.getString(4)).put("address",it.getString(5)).put("lat",it.getDouble(6)).put("lon",it.getDouble(7)))}}
+  readableDatabase.rawQuery("SELECT id,city_id,name,description FROM routes ORDER BY id",null).use{while(it.moveToNext()){jr.put(JSONObject().put("id",it.getLong(0)).put("city_id",it.getLong(1)).put("name",it.getString(2)).put("description",it.getString(3)))}}
+  readableDatabase.rawQuery("SELECT route_id,place_id,station_order FROM route_places ORDER BY route_id,station_order",null).use{while(it.moveToNext()){jrp.put(JSONObject().put("route_id",it.getLong(0)).put("place_id",it.getLong(1)).put("station_order",it.getLong(2)))}}
+  root.put("cities",jc).put("places",jp).put("routes",jr).put("route_places",jrp);return root.toString(2)
+ }
+ fun importJson(text:String){
+  val root=JSONObject(text);require(root.optString("format")=="cultureguide"){"Неверный формат файла"}
+  val db=writableDatabase;db.beginTransaction()
+  try{
+   db.execSQL("DELETE FROM route_places");db.execSQL("DELETE FROM routes");db.execSQL("DELETE FROM places");db.execSQL("DELETE FROM cities")
+   val cityIds=HashMap<Long,Long>();val placeIds=HashMap<Long,Long>();val routeIds=HashMap<Long,Long>()
+   val cj=root.getJSONArray("cities");for(i in 0 until cj.length()){val o=cj.getJSONObject(i);cityIds[o.getLong("id")]=addCity(o.getString("name"),o.getString("country"),o.getDouble("lat"),o.getDouble("lon"))}
+   val pj=root.getJSONArray("places");for(i in 0 until pj.length()){val o=pj.getJSONObject(i);placeIds[o.getLong("id")]=addPlace(cityIds[o.getLong("city_id")]?:error("Город не найден"),o.getString("name"),o.getString("category"),o.getString("description"),o.getString("address"),o.getDouble("lat"),o.getDouble("lon"))}
+   val rs=db.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)");val rj=root.getJSONArray("routes");for(i in 0 until rj.length()){val o=rj.getJSONObject(i);rs.bindLong(1,cityIds[o.getLong("city_id")]?:error("Город маршрута не найден"));rs.bindString(2,o.getString("name"));rs.bindString(3,o.getString("description"));routeIds[o.getLong("id")]=rs.executeInsert()}
+   val ls=db.compileStatement("INSERT INTO route_places(route_id,place_id,station_order) VALUES(?,?,?)");val lj=root.getJSONArray("route_places");for(i in 0 until lj.length()){val o=lj.getJSONObject(i);ls.bindLong(1,routeIds[o.getLong("route_id")]?:error("Маршрут не найден"));ls.bindLong(2,placeIds[o.getLong("place_id")]?:error("Объект маршрута не найден"));ls.bindLong(3,o.getLong("station_order"));ls.executeInsert()}
+   db.setTransactionSuccessful()
+  }finally{db.endTransaction()}
  }
  fun cities():List<City>{val r=readableDatabase.rawQuery("SELECT id,name,country,lat,lon FROM cities ORDER BY name",null);val a=mutableListOf<City>();r.use{while(it.moveToNext())a+=City(it.getLong(0),it.getString(1),it.getString(2),it.getDouble(3),it.getDouble(4))};return a}
  fun places(city:Long):List<Place>{val r=readableDatabase.rawQuery("SELECT id,name,category,description,address,lat,lon FROM places WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<Place>();r.use{while(it.moveToNext())a+=Place(it.getLong(0),it.getString(1),it.getString(2),it.getString(3),it.getString(4),it.getDouble(5),it.getDouble(6))};return a}
@@ -222,6 +256,9 @@ class MainActivity:Activity(){
  private var currentPlaces:List<Place> = emptyList()
  private var routePlaces:List<Place> = emptyList()
  private lateinit var citySpinner:Spinner
+ private lateinit var searchBox:EditText
+ private val CREATE_JSON=2001
+ private val OPEN_JSON=2002
  private var lastLocation:Location?=null
  private var routePolyline:MapObject?=null
  private val routePolylines=mutableListOf<MapObject>()
@@ -249,9 +286,11 @@ class MainActivity:Activity(){
 
  private fun ui(){
   val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,8,14,8)
-  val title=TextView(this);title.text="Культурный маршрут";title.textSize=25f;root.addView(title)
+  val title=TextView(this);title.text="Культурный маршрут · v${BuildConfig.VERSION_NAME}";title.textSize=23f;title.setPadding(0,0,0,4);root.addView(title)
   citySpinner=Spinner(this);root.addView(citySpinner,LinearLayout.LayoutParams(-1,48))
-  val tabs=LinearLayout(this)
+  searchBox=EditText(this);searchBox.hint="Поиск объекта";searchBox.singleLine=true;root.addView(searchBox,LinearLayout.LayoutParams(-1,52))
+  val tabsScroll=HorizontalScrollView(this)
+  val tabs=LinearLayout(this);tabs.orientation=LinearLayout.HORIZONTAL
   val schemeBtn=Button(this);schemeBtn.text="Схема"
   val mapBtn=Button(this);mapBtn.text="Карта"
   val linesBtn=Button(this);linesBtn.text="Линии"
@@ -263,7 +302,10 @@ class MainActivity:Activity(){
    btn.setBackgroundColor(Color.WHITE)
    tabs.addView(btn,LinearLayout.LayoutParams(0,52,1f))
   }
-  root.addView(tabs)
+  tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,58))
+  val adminRow=LinearLayout(this);adminRow.orientation=LinearLayout.HORIZONTAL
+  fun adminButton(text:String,onClick:()->Unit){val b=Button(this);b.text=text;b.setAllCaps(false);b.setOnClickListener{onClick()};adminRow.addView(b,LinearLayout.LayoutParams(0,50,1f))}
+  adminButton("Город"){showAddCity()};adminButton("Объект"){showAddPlace()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(adminRow)
   val mapLayer=FrameLayout(this)
   mapView=MapView(this)
   schemeView=MetroView(this)
@@ -279,12 +321,32 @@ class MainActivity:Activity(){
   linesBtn.setOnClickListener{showLines()}
   routeBtn.setOnClickListener{buildRoute()}
   gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{showMap();showUserLocation(it.latitude,it.longitude,true)}}
+  searchBox.addTextChangedListener(object:android.text.TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){renderPlaces(s?.toString().orEmpty())};override fun afterTextChanged(s:android.text.Editable?){}})
   citySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
    override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){if(position in cities.indices && cityId!=cities[position].id){cityId=cities[position].id;selectedRoute=null;refresh()}}
    override fun onNothingSelected(parent:AdapterView<*>){}
   }
  }
 
+ private fun showAddCity(){
+  val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
+  val name=EditText(this);name.hint="Город";val country=EditText(this);country.hint="Страна";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,country,lat,lon).forEach{box.addView(it)}
+  AlertDialog.Builder(this).setTitle("Добавить город").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addCity(name.text.toString().trim(),country.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble());loadCities();refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
+ }
+ private fun showAddPlace(){
+  val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
+  val name=EditText(this);name.hint="Название";val cat=EditText(this);cat.hint="Категория";val desc=EditText(this);desc.hint="Описание";val address=EditText(this);address.hint="Адрес";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,cat,desc,address,lat,lon).forEach{box.addView(it)}
+  AlertDialog.Builder(this).setTitle("Добавить объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addPlace(cityId,name.text.toString().trim(),cat.text.toString().trim(),desc.text.toString().trim(),address.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble());refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
+ }
+ private fun exportCatalog(){startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="application/json";putExtra(Intent.EXTRA_TITLE,"cultureguide.json")},CREATE_JSON)}
+ private fun importCatalog(){startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="application/json"},OPEN_JSON)}
+ override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
+  super.onActivityResult(requestCode,resultCode,data);if(resultCode!=RESULT_OK||data?.data==null)return
+  try{
+   if(requestCode==CREATE_JSON){contentResolver.openOutputStream(data.data!!)?.use{it.write(db.exportJson().toByteArray(Charsets.UTF_8))};Toast.makeText(this,"Каталог сохранён",Toast.LENGTH_SHORT).show()}
+   else if(requestCode==OPEN_JSON){val text=contentResolver.openInputStream(data.data!!)?.bufferedReader()?.use{it.readText()}?:return;db.importJson(text);loadCities();refresh();Toast.makeText(this,"Каталог импортирован",Toast.LENGTH_SHORT).show()}
+  }catch(e:Exception){Toast.makeText(this,"Ошибка файла: "+e.message,Toast.LENGTH_LONG).show()}
+ }
  private fun loadCities(){
   cities=db.cities()
   val labels=cities.map{it.name+", "+it.country}
@@ -330,14 +392,14 @@ class MainActivity:Activity(){
  }
 
  private fun refresh(){
-  routeLines=db.routes(cityId);currentPlaces=db.places(cityId);schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=null;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap()
+  routeLines=db.routes(cityId);currentPlaces=db.places(cityId);selectedRoute=null;routePlaces=emptyList()
+  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=null;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap();renderPlaces(searchBox.text.toString());showScheme()
+ }
+ private fun renderPlaces(query:String){
+  val q=query.trim().lowercase();val filtered=currentPlaces.filter{q.isEmpty()||it.name.lowercase().contains(q)||it.category.lowercase().contains(q)||it.address.lowercase().contains(q)}
   list.removeAllViews()
-  currentPlaces.forEachIndexed{i,z->
-   val t=TextView(this);t.text="${i+1}. ${z.name}\n${z.category}\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12)
-   t.setOnClickListener{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;showPlace(z);moveCamera(z.lat,z.lon,16f)}
-   list.addView(t)
-  }
-  showScheme()
+  filtered.forEachIndexed{i,z->{val t=TextView(this);t.text="${i+1}. ${z.name}\n${z.category}\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12);t.setOnClickListener{showMap();showPlace(z);moveCamera(z.lat,z.lon,16f)};list.addView(t)}}
+  status.text=filtered.size.toString()+" объектов · "+if(q.isEmpty())"каталог" else "поиск"
  }
 
  private fun drawPlacesOnMap(){
