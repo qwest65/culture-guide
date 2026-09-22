@@ -206,7 +206,28 @@ class MainActivity:Activity(){
   AlertDialog.Builder(this).setTitle(p.name).setView(box).setPositiveButton("Открыть карту"){_,_->openMap(p)}.setNegativeButton("Закрыть",null).show()
  }
 
- private fun openMap(p:Place){startActivity(Intent(Intent.ACTION_VIEW,Uri.parse("geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${Uri.encode(p.name)})")))}
+ private fun openMap(p:Place){
+  val geo=Uri.parse("geo:${p.lat},${p.lon}?q=${p.lat},${p.lon}(${Uri.encode(p.name)})")
+  val intent=Intent(Intent.ACTION_VIEW,geo)
+  try{
+   if(intent.resolveActivity(packageManager)!=null){
+    startActivity(intent)
+   }else{
+    openMapInBrowser(p)
+   }
+  }catch(_:Exception){
+   openMapInBrowser(p)
+  }
+}
+
+private fun openMapInBrowser(p:Place){
+  val url="https://yandex.ru/maps/?ll="+p.lon+"%2C"+p.lat+"&z=16&text="+Uri.encode(p.name)
+  try{
+   startActivity(Intent(Intent.ACTION_VIEW,Uri.parse(url)))
+  }catch(_:Exception){
+   Toast.makeText(this,"Приложение карт не установлено",Toast.LENGTH_LONG).show()
+  }
+}
 
  override fun onStart(){super.onStart();MapKitFactory.getInstance().onStart();mapView.onStart()}
  override fun onStop(){mapView.onStop();MapKitFactory.getInstance().onStop();super.onStop()}
