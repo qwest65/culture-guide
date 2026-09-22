@@ -49,13 +49,13 @@ import kotlin.math.*
 import java.lang.ref.WeakReference
 
 data class City(val id:Long,val name:String,val country:String,val lat:Double,val lon:Double)
-data class Place(val id:Long,val name:String,val category:String,val description:String,val address:String,val lat:Double,val lon:Double)
+data class Place(val id:Long,val name:String,val category:String,val description:String,val address:String,val lat:Double,val lon:Double,val sourceUrl:String,val imageUrl:String)
 data class RouteLine(val id:Long,val name:String,val description:String,val placeIds:List<Long>)
 
-class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
+class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,4){
  override fun onCreate(db:SQLiteDatabase){
   db.execSQL("CREATE TABLE cities(id INTEGER PRIMARY KEY AUTOINCREMENT,name TEXT NOT NULL,country TEXT NOT NULL,lat REAL NOT NULL,lon REAL NOT NULL)")
-  db.execSQL("CREATE TABLE places(id INTEGER PRIMARY KEY AUTOINCREMENT,city_id INTEGER NOT NULL,name TEXT NOT NULL,category TEXT NOT NULL,description TEXT NOT NULL,address TEXT NOT NULL,lat REAL NOT NULL,lon REAL NOT NULL)")
+  db.execSQL("CREATE TABLE places(id INTEGER PRIMARY KEY AUTOINCREMENT,city_id INTEGER NOT NULL,name TEXT NOT NULL,category TEXT NOT NULL,description TEXT NOT NULL,address TEXT NOT NULL,lat REAL NOT NULL,lon REAL NOT NULL,source_url TEXT NOT NULL DEFAULT '',image_url TEXT NOT NULL DEFAULT '')")
   db.execSQL("CREATE TABLE routes(id INTEGER PRIMARY KEY AUTOINCREMENT,city_id INTEGER NOT NULL,name TEXT NOT NULL,description TEXT NOT NULL)")
   db.execSQL("CREATE TABLE route_places(route_id INTEGER NOT NULL,place_id INTEGER NOT NULL,station_order INTEGER NOT NULL,PRIMARY KEY(route_id,place_id))")
   val city=db.compileStatement("INSERT INTO cities(name,country,lat,lon) VALUES('Троицк','Россия',54.0820,61.5596)").executeInsert()
@@ -81,6 +81,10 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
    db.execSQL("CREATE TABLE IF NOT EXISTS route_places(route_id INTEGER NOT NULL,place_id INTEGER NOT NULL,station_order INTEGER NOT NULL,PRIMARY KEY(route_id,place_id))")
    val c=db.rawQuery("SELECT id FROM cities ORDER BY id LIMIT 1",null)
    c.use{if(it.moveToFirst())seedRoutes(db,it.getLong(0))}
+  }
+  if(oldVersion<4){
+   db.execSQL("ALTER TABLE places ADD COLUMN source_url TEXT NOT NULL DEFAULT ''")
+   db.execSQL("ALTER TABLE places ADD COLUMN image_url TEXT NOT NULL DEFAULT ''")
   }
  }
  private fun seedRoutes(db:SQLiteDatabase,cityId:Long){
@@ -108,16 +112,16 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
    bindString(1,name);bindString(2,country);bindDouble(3,lat);bindDouble(4,lon)
   }.executeInsert()
  }
- fun addPlace(cityId:Long,name:String,category:String,description:String,address:String,lat:Double,lon:Double):Long{
-  return writableDatabase.compileStatement("INSERT INTO places(city_id,name,category,description,address,lat,lon) VALUES(?,?,?,?,?,?,?)").apply{
-   bindLong(1,cityId);bindString(2,name);bindString(3,category);bindString(4,description);bindString(5,address);bindDouble(6,lat);bindDouble(7,lon)
+ fun addPlace(cityId:Long,name:String,category:String,description:String,address:String,lat:Double,lon:Double,sourceUrl:String="",imageUrl:String=""):Long{
+  return writableDatabase.compileStatement("INSERT INTO places(city_id,name,category,description,address,lat,lon,source_url,image_url) VALUES(?,?,?,?,?,?,?,?,?)").apply{
+   bindLong(1,cityId);bindString(2,name);bindString(3,category);bindString(4,description);bindString(5,address);bindDouble(6,lat);bindDouble(7,lon);bindString(8,sourceUrl);bindString(9,imageUrl)
   }.executeInsert()
  }
  fun exportJson():String{
   val root=JSONObject().put("format","cultureguide").put("version",1)
   val jc=JSONArray();val jp=JSONArray();val jr=JSONArray();val jrp=JSONArray()
   readableDatabase.rawQuery("SELECT id,name,country,lat,lon FROM cities ORDER BY id",null).use{while(it.moveToNext()){jc.put(JSONObject().put("id",it.getLong(0)).put("name",it.getString(1)).put("country",it.getString(2)).put("lat",it.getDouble(3)).put("lon",it.getDouble(4)))}}
-  readableDatabase.rawQuery("SELECT id,city_id,name,category,description,address,lat,lon FROM places ORDER BY id",null).use{while(it.moveToNext()){jp.put(JSONObject().put("id",it.getLong(0)).put("city_id",it.getLong(1)).put("name",it.getString(2)).put("category",it.getString(3)).put("description",it.getString(4)).put("address",it.getString(5)).put("lat",it.getDouble(6)).put("lon",it.getDouble(7)))}}
+  readableDatabase.rawQuery("SELECT id,city_id,name,category,description,address,lat,lon FROM places ORDER BY id",null).use{while(it.moveToNext()){jp.put(JSONObject().put("id",it.getLong(0)).put("city_id",it.getLong(1)).put("name",it.getString(2)).put("category",it.getString(3)).put("description",it.getString(4)).put("address",it.getString(5)).put("lat",it.getDouble(6)).put("lon",it.getDouble(7)).put("source_url",it.getString(8)).put("image_url",it.getString(9)))}}
   readableDatabase.rawQuery("SELECT id,city_id,name,description FROM routes ORDER BY id",null).use{while(it.moveToNext()){jr.put(JSONObject().put("id",it.getLong(0)).put("city_id",it.getLong(1)).put("name",it.getString(2)).put("description",it.getString(3)))}}
   readableDatabase.rawQuery("SELECT route_id,place_id,station_order FROM route_places ORDER BY route_id,station_order",null).use{while(it.moveToNext()){jrp.put(JSONObject().put("route_id",it.getLong(0)).put("place_id",it.getLong(1)).put("station_order",it.getLong(2)))}}
   root.put("cities",jc).put("places",jp).put("routes",jr).put("route_places",jrp);return root.toString(2)
@@ -128,16 +132,71 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
   try{
    db.execSQL("DELETE FROM route_places");db.execSQL("DELETE FROM routes");db.execSQL("DELETE FROM places");db.execSQL("DELETE FROM cities")
    val cityIds=HashMap<Long,Long>();val placeIds=HashMap<Long,Long>();val routeIds=HashMap<Long,Long>()
-   val cj=root.getJSONArray("cities");for(i in 0 until cj.length()){val o=cj.getJSONObject(i);cityIds[o.getLong("id")]=addCity(o.getString("name"),o.getString("country"),o.getDouble("lat"),o.getDouble("lon"))}
+   val cj=root.getJSONArray("cities");for(i in 0 until cj.length()){val o=cj.getJSONObject(i);cityIds[o.getLong("id")]=addCity(o.getString("name"),o.getString("country"),o.getDouble("lat"),o.getDouble("lon"),o.optString("source_url"),o.optString("image_url"))}
    val pj=root.getJSONArray("places");for(i in 0 until pj.length()){val o=pj.getJSONObject(i);placeIds[o.getLong("id")]=addPlace(cityIds[o.getLong("city_id")]?:error("Город не найден"),o.getString("name"),o.getString("category"),o.getString("description"),o.getString("address"),o.getDouble("lat"),o.getDouble("lon"))}
    val rs=db.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)");val rj=root.getJSONArray("routes");for(i in 0 until rj.length()){val o=rj.getJSONObject(i);rs.bindLong(1,cityIds[o.getLong("city_id")]?:error("Город маршрута не найден"));rs.bindString(2,o.getString("name"));rs.bindString(3,o.getString("description"));routeIds[o.getLong("id")]=rs.executeInsert()}
    val ls=db.compileStatement("INSERT INTO route_places(route_id,place_id,station_order) VALUES(?,?,?)");val lj=root.getJSONArray("route_places");for(i in 0 until lj.length()){val o=lj.getJSONObject(i);ls.bindLong(1,routeIds[o.getLong("route_id")]?:error("Маршрут не найден"));ls.bindLong(2,placeIds[o.getLong("place_id")]?:error("Объект маршрута не найден"));ls.bindLong(3,o.getLong("station_order"));ls.executeInsert()}
    db.setTransactionSuccessful()
   }finally{db.endTransaction()}
  }
+ fun mergeCatalogJson(text:String):Triple<Int,Int,Int>{
+  val root=JSONObject(text)
+  require(root.optString("format")=="cultureguide"){"Неверный формат каталога"}
+  val db=writableDatabase
+  db.beginTransaction()
+  var addedCities=0;var addedPlaces=0;var addedRoutes=0
+  try{
+   val cityIds=HashMap<Long,Long>();val placeIds=HashMap<Long,Long>();val routeIds=HashMap<Long,Long>()
+   val cj=root.optJSONArray("cities")?:JSONArray()
+   for(i in 0 until cj.length()){
+    val o=cj.getJSONObject(i);val name=o.getString("name");val country=o.optString("country")
+    val existing=db.rawQuery("SELECT id FROM cities WHERE name=? AND country=? LIMIT 1",arrayOf(name,country))
+    var wasExisting=false
+    val id=existing.use{if(it.moveToFirst()){wasExisting=true;it.getLong(0)}else addCity(name,country,o.getDouble("lat"),o.getDouble("lon"))}
+    if(!wasExisting)addedCities++
+    cityIds[o.getLong("id")]=id
+   }
+   val pj=root.optJSONArray("places")?:JSONArray()
+   for(i in 0 until pj.length()){
+    val o=pj.getJSONObject(i);val city=cityIds[o.getLong("city_id")]?:error("Город объекта не найден")
+    val existing=db.rawQuery("SELECT id FROM places WHERE city_id=? AND name=? LIMIT 1",arrayOf(city.toString(),o.getString("name")))
+    var wasExisting=false
+    val id=existing.use{
+     if(it.moveToFirst()){wasExisting=true;it.getLong(0)}
+     else addPlace(city,o.getString("name"),o.getString("category"),o.optString("description"),o.optString("address"),o.getDouble("lat"),o.getDouble("lon"),o.optString("source_url"),o.optString("image_url"))
+    }
+    if(!wasExisting)addedPlaces++
+    placeIds[o.getLong("id")]=id
+   }
+   val rj=root.optJSONArray("routes")?:JSONArray()
+   for(i in 0 until rj.length()){
+    val o=rj.getJSONObject(i);val city=cityIds[o.getLong("city_id")]?:error("Город маршрута не найден")
+    val existing=db.rawQuery("SELECT id FROM routes WHERE city_id=? AND name=? LIMIT 1",arrayOf(city.toString(),o.getString("name")))
+    var wasExisting=false
+    val id=existing.use{
+     if(it.moveToFirst()){wasExisting=true;it.getLong(0)}
+     else{
+      val st=db.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)")
+      st.bindLong(1,city);st.bindString(2,o.getString("name"));st.bindString(3,o.optString("description"));st.executeInsert()
+     }
+    }
+    if(!wasExisting)addedRoutes++
+    routeIds[o.getLong("id")]=id
+   }
+   val links=root.optJSONArray("route_places")?:JSONArray()
+   val linkStmt=db.compileStatement("INSERT OR IGNORE INTO route_places(route_id,place_id,station_order) VALUES(?,?,?)")
+   for(i in 0 until links.length()){
+    val o=links.getJSONObject(i);val route=routeIds[o.getLong("route_id")]?:continue;val place=placeIds[o.getLong("place_id")]?:continue
+    linkStmt.bindLong(1,route);linkStmt.bindLong(2,place);linkStmt.bindLong(3,o.getLong("station_order"));linkStmt.executeInsert()
+   }
+   db.setTransactionSuccessful()
+  }finally{db.endTransaction()}
+  return Triple(addedCities,addedPlaces,addedRoutes)
+ }
+
  fun cities():List<City>{val r=readableDatabase.rawQuery("SELECT id,name,country,lat,lon FROM cities ORDER BY name",null);val a=mutableListOf<City>();r.use{while(it.moveToNext())a+=City(it.getLong(0),it.getString(1),it.getString(2),it.getDouble(3),it.getDouble(4))};return a}
  fun categories(city:Long):List<String>{val r=readableDatabase.rawQuery("SELECT DISTINCT category FROM places WHERE city_id=? ORDER BY category",arrayOf(city.toString()));val a=mutableListOf("Все");r.use{while(it.moveToNext())a+=it.getString(0)};return a}
- fun places(city:Long):List<Place>{val r=readableDatabase.rawQuery("SELECT id,name,category,description,address,lat,lon FROM places WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<Place>();r.use{while(it.moveToNext())a+=Place(it.getLong(0),it.getString(1),it.getString(2),it.getString(3),it.getString(4),it.getDouble(5),it.getDouble(6))};return a}
+ fun places(city:Long):List<Place>{val r=readableDatabase.rawQuery("SELECT id,name,category,description,address,lat,lon,source_url,image_url FROM places WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<Place>();r.use{while(it.moveToNext())a+=Place(it.getLong(0),it.getString(1),it.getString(2),it.getString(3),it.getString(4),it.getDouble(5),it.getDouble(6),it.getString(7),it.getString(8))};return a}
  fun routes(city:Long):List<RouteLine>{val r=readableDatabase.rawQuery("SELECT id,name,description FROM routes WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<RouteLine>();r.use{while(it.moveToNext()){val id=it.getLong(0);val q=readableDatabase.rawQuery("SELECT place_id FROM route_places WHERE route_id=? ORDER BY station_order",arrayOf(id.toString()));val ids=mutableListOf<Long>();q.use{while(it.moveToNext())ids+=it.getLong(0)};a+=RouteLine(id,it.getString(1),it.getString(2),ids)}};return a}
  fun routesForPlace(city:Long,placeId:Long):List<RouteLine>{return routes(city).filter{placeId in it.placeIds}}
  fun routePlaces(route:RouteLine,all:List<Place>):List<Place>{val byId=all.associateBy{it.id};return route.placeIds.mapNotNull{byId[it]}}
@@ -280,7 +339,7 @@ class MainActivity:Activity(){
   tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,58))
   val adminRow=LinearLayout(this);adminRow.orientation=LinearLayout.HORIZONTAL
   fun adminButton(text:String,onClick:()->Unit){val b=Button(this);b.text=text;b.setAllCaps(false);b.setOnClickListener{onClick()};adminRow.addView(b,LinearLayout.LayoutParams(0,50,1f))}
-  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
+  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Обновить каталог"){syncRemoteCatalog()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
   val mapLayer=FrameLayout(this)
   mapView=MapView(this)
   schemeView=MetroView(this)
@@ -363,9 +422,31 @@ class MainActivity:Activity(){
  }
  private fun showAddPlace(){
   val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
-  val name=EditText(this);name.hint="Название";val cat=EditText(this);cat.hint="Категория";val desc=EditText(this);desc.hint="Описание";val address=EditText(this);address.hint="Адрес";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,cat,desc,address,lat,lon).forEach{box.addView(it)}
-  AlertDialog.Builder(this).setTitle("Добавить объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addPlace(cityId,name.text.toString().trim(),cat.text.toString().trim(),desc.text.toString().trim(),address.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble());refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
+  val name=EditText(this);name.hint="Название";val cat=EditText(this);cat.hint="Категория";val desc=EditText(this);desc.hint="Описание";val address=EditText(this);address.hint="Адрес";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";val source=EditText(this);source.hint="Источник (URL)";val image=EditText(this);image.hint="Изображение (URL)";listOf(name,cat,desc,address,lat,lon,source,image).forEach{box.addView(it)}
+  AlertDialog.Builder(this).setTitle("Добавить объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addPlace(cityId,name.text.toString().trim(),cat.text.toString().trim(),desc.text.toString().trim(),address.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble(),source.text.toString().trim(),image.text.toString().trim());refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
  }
+ private fun syncRemoteCatalog(){
+  status.text="Обновляю каталог…"
+  Thread{
+   try{
+    val connection=java.net.URL("https://raw.githubusercontent.com/qwest65/prog/main/data/catalog.json").openConnection() as java.net.HttpURLConnection
+    connection.connectTimeout=10000;connection.readTimeout=20000;connection.requestMethod="GET"
+    connection.setRequestProperty("Accept","application/json")
+    if(connection.responseCode !in 200..299)throw IllegalStateException("HTTP "+connection.responseCode)
+    val text=connection.inputStream.bufferedReader(Charsets.UTF_8).use{it.readText()}
+    val result=db.mergeCatalogJson(text)
+    connection.disconnect()
+    runOnUiThread{
+     loadCities();refresh()
+     status.text="Каталог обновлён · +" + result.first + " городов, +" + result.second + " объектов, +" + result.third + " маршрутов"
+     Toast.makeText(this,"Каталог синхронизирован",Toast.LENGTH_SHORT).show()
+    }
+   }catch(e:Exception){
+    runOnUiThread{status.text="Ошибка обновления каталога";Toast.makeText(this,"Не удалось обновить каталог: "+(e.message?:"ошибка"),Toast.LENGTH_LONG).show()}
+   }
+  }.start()
+ }
+
  private fun exportCatalog(){startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="application/json";putExtra(Intent.EXTRA_TITLE,"cultureguide.json")},CREATE_JSON)}
  private fun importCatalog(){startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply{addCategory(Intent.CATEGORY_OPENABLE);type="application/json"},OPEN_JSON)}
  override fun onActivityResult(requestCode:Int,resultCode:Int,data:Intent?){
