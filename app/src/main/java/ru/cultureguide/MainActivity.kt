@@ -1,5 +1,6 @@
 package ru.cultureguide
 
+import android.Manifest
 import android.app.Activity
 import android.app.AlertDialog
 import android.os.Bundle
@@ -10,6 +11,9 @@ import android.webkit.WebViewClient
 import android.widget.*
 import android.content.Context
 import android.content.Intent
+import android.location.Location
+import android.location.LocationListener
+import android.location.LocationManager
 import android.net.Uri
 import android.database.sqlite.SQLiteOpenHelper
 import android.database.sqlite.SQLiteDatabase
@@ -61,15 +65,16 @@ class MetroView(c:Context):View(c){
 }
 
 class MainActivity:Activity(){
- lateinit var db:Db;lateinit var map:MetroView;lateinit var web:WebView;lateinit var list:LinearLayout;lateinit var status:TextView;var cityId=1L;var currentPlaces:List<Place> = emptyList()
- override fun onCreate(b:Bundle?){super.onCreate(b);db=Db(this);ui();refresh()}
+ lateinit var db:Db;lateinit var map:MetroView;lateinit var web:WebView;lateinit var list:LinearLayout;lateinit var status:TextView;lateinit var locationManager:LocationManager;var cityId=1L;var currentPlaces:List<Place> = emptyList();var lastLocation:Location?=null
+ val locationListener=object:LocationListener{override fun onLocationChanged(location:Location){lastLocation=location;web.evaluateJavascript("showUser(\${location.latitude},\${location.longitude},true);",null);status.text="GPS: %.5f, %.5f".format(java.util.Locale.US,location.latitude,location.longitude)}}
+ override fun onCreate(b:Bundle?){super.onCreate(b);db=Db(this);locationManager=getSystemService(Context.LOCATION_SERVICE) as LocationManager;ui();refresh();requestLocation()}
  fun ui(){
   val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,10,14,8)
   val title=TextView(this);title.text="ТроицкGuide";title.textSize=26f;root.addView(title)
   val sub=TextView(this);sub.text="Троицк, Челябинская область";sub.textSize=16f;root.addView(sub)
   val tabs=LinearLayout(this)
-  val mapBtn=Button(this);mapBtn.text="Карта";val schemeBtn=Button(this);schemeBtn.text="Схема";val routeBtn=Button(this);routeBtn.text="Маршрут"
-  tabs.addView(mapBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(schemeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(routeBtn,LinearLayout.LayoutParams(0,52,1f));root.addView(tabs)
+  val mapBtn=Button(this);mapBtn.text="Карта";val schemeBtn=Button(this);schemeBtn.text="Схема";val routeBtn=Button(this);routeBtn.text="Маршрут";val gpsBtn=Button(this);gpsBtn.text="GPS"
+  tabs.addView(mapBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(schemeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(routeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(gpsBtn,LinearLayout.LayoutParams(0,52,1f));root.addView(tabs)
   web=WebView(this);web.webViewClient=WebViewClient();web.settings.javaScriptEnabled=true;web.settings.domStorageEnabled=true
   root.addView(web,LinearLayout.LayoutParams(-1,0,1.35f))
   map=MetroView(this);map.visibility=View.GONE;root.addView(map,LinearLayout.LayoutParams(-1,0,1.35f))
@@ -78,7 +83,11 @@ class MainActivity:Activity(){
   mapBtn.setOnClickListener{web.visibility=View.VISIBLE;map.visibility=View.GONE;status.text="Карта OpenStreetMap · выбери объект в списке"}
   schemeBtn.setOnClickListener{web.visibility=View.GONE;map.visibility=View.VISIBLE;status.text="Схематическая карта маршрутов"}
   routeBtn.setOnClickListener{buildRoute()}
+  gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{web.visibility=View.VISIBLE;map.visibility=View.GONE;web.evaluateJavascript("centerMap(\${it.latitude},\${it.longitude});",null)}}
  }
+ fun requestLocation(){if(checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION)!=PackageManager.PERMISSION_GRANTED&&checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION)!=PackageManager.PERMISSION_GRANTED){requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION),1001);return};try{val provider=when{locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)->LocationManager.GPS_PROVIDER;locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)->LocationManager.NETWORK_PROVIDER;else->null};if(provider==null){status.text="GPS недоступен: включите геолокацию";return};locationManager.requestLocationUpdates(provider,5000L,5f,locationListener);locationManager.getLastKnownLocation(provider)?.let{locationListener.onLocationChanged(it)}}catch(_:SecurityException){status.text="Нет разрешения на геолокацию"}}
+ override fun onRequestPermissionsResult(requestCode:Int,permissions:Array<String>,results:IntArray){super.onRequestPermissionsResult(requestCode,permissions,results);if(requestCode==1001&&results.any{it==PackageManager.PERMISSION_GRANTED})requestLocation()else if(requestCode==1001)status.text="Геолокация отключена пользователем"}
+ override fun onDestroy(){if(::locationManager.isInitialized)locationManager.removeUpdates(locationListener);super.onDestroy()}
  fun buildRoute(){
   if(currentPlaces.isEmpty())return
   val r=mutableListOf(currentPlaces.first());val left=currentPlaces.drop(1).toMutableList()
@@ -106,7 +115,7 @@ class MainActivity:Activity(){
   return """<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><style>html,body,#map{height:100%;margin:0}.leaflet-popup-content{font-size:15px}</style></head><body><div id="map"></div><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script><script>
 var data=[$markers];var map=L.map('map').setView([54.0820,61.5596],14);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);var layer=L.layerGroup().addTo(map);
 function draw(){layer.clearLayers();data.forEach(function(x,i){L.marker([x.lat,x.lon]).addTo(layer).bindPopup('<b>'+(i+1)+'. '+x.name+'</b><br>'+x.cat+'<br>'+x.address);});}
-function showRoute(points){draw();if(points.length>1){L.polyline(points,{weight:6}).addTo(map);map.fitBounds(points,{padding:[20,20]});}}draw();
+var userLayer=L.layerGroup().addTo(map);function showUser(lat,lon,center){userLayer.clearLayers();L.circleMarker([lat,lon],{radius:9,weight:3,fillOpacity:0.8}).addTo(userLayer).bindPopup('Моё положение');if(center)map.setView([lat,lon],15);}function centerMap(lat,lon){map.setView([lat,lon],16);}function showRoute(points){draw();if(points.length>1){L.polyline(points,{weight:6}).addTo(map);map.fitBounds(points,{padding:[20,20]});}}draw();
 </script></body></html>"""
  }
 }
