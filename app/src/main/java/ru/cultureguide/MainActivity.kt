@@ -112,6 +112,23 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,4){
    bindString(1,name);bindString(2,country);bindDouble(3,lat);bindDouble(4,lon)
   }.executeInsert()
  }
+ fun updateCity(cityId:Long,name:String,country:String,lat:Double,lon:Double){
+  writableDatabase.compileStatement("UPDATE cities SET name=?,country=?,lat=?,lon=? WHERE id=?").apply{
+   bindString(1,name);bindString(2,country);bindDouble(3,lat);bindDouble(4,lon);bindLong(5,cityId)
+  }.executeUpdateDelete()
+ }
+ fun deleteCity(cityId:Long){
+  writableDatabase.beginTransaction()
+  try{
+   val routeIds=mutableListOf<Long>()
+   writableDatabase.rawQuery("SELECT id FROM routes WHERE city_id=?",arrayOf(cityId.toString())).use{while(it.moveToNext())routeIds+=it.getLong(0)}
+   routeIds.forEach{writableDatabase.delete("route_places","route_id=?",arrayOf(it.toString()))}
+   writableDatabase.delete("routes","city_id=?",arrayOf(cityId.toString()))
+   writableDatabase.delete("places","city_id=?",arrayOf(cityId.toString()))
+   writableDatabase.delete("cities","id=?",arrayOf(cityId.toString()))
+   writableDatabase.setTransactionSuccessful()
+  }finally{writableDatabase.endTransaction()}
+ }
  fun addPlace(cityId:Long,name:String,category:String,description:String,address:String,lat:Double,lon:Double,sourceUrl:String="",imageUrl:String=""):Long{
   return writableDatabase.compileStatement("INSERT INTO places(city_id,name,category,description,address,lat,lon,source_url,image_url) VALUES(?,?,?,?,?,?,?,?,?)").apply{
    bindLong(1,cityId);bindString(2,name);bindString(3,category);bindString(4,description);bindString(5,address);bindDouble(6,lat);bindDouble(7,lon);bindString(8,sourceUrl);bindString(9,imageUrl)
@@ -373,7 +390,7 @@ class MainActivity:Activity(){
   tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,58))
   val adminRow=LinearLayout(this);adminRow.orientation=LinearLayout.HORIZONTAL
   fun adminButton(text:String,onClick:()->Unit){val b=Button(this);b.text=text;b.setAllCaps(false);b.setOnClickListener{onClick()};adminRow.addView(b,LinearLayout.LayoutParams(0,50,1f))}
-  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Линия"){showRouteEditor(null)};adminButton("Обновить каталог"){syncRemoteCatalog()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
+  adminButton("Город"){showAddCity()};adminButton("Правка города"){showEditCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Линия"){showRouteEditor(null)};adminButton("Обновить каталог"){syncRemoteCatalog()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
   val mapLayer=FrameLayout(this)
   mapView=MapView(this)
   schemeView=MetroView(this)
@@ -397,6 +414,10 @@ class MainActivity:Activity(){
   }
  }
 
+ private fun selectCityInSpinner(){
+  val idx=cities.indexOfFirst{it.id==cityId}
+  if(idx>=0)citySpinner.setSelection(idx)
+ }
  private fun searchCity(){
   val input=EditText(this);input.hint="Например: Москва, Россия";input.setSingleLine(true)
   AlertDialog.Builder(this).setTitle("Найти город").setView(input).setNegativeButton("Отмена",null).setPositiveButton("Искать"){_,_->submitCitySearch(input.text.toString().trim())}.show()
@@ -414,7 +435,7 @@ class MainActivity:Activity(){
     if(results.isEmpty()){Toast.makeText(this@MainActivity,"Город не найден",Toast.LENGTH_LONG).show();return}
     val labels=results.map{it.first+" · %.5f, %.5f".format(java.util.Locale.US,it.second,it.third)}
     AlertDialog.Builder(this@MainActivity).setTitle("Выберите город").setItems(labels.toTypedArray()){_,which->
-     val v=results[which];try{db.addCity(v.first,"",v.second,v.third);loadCities();cityId=db.cities().lastOrNull()?.id?:cityId;refresh();moveCamera(v.second,v.third,13f)}catch(_:Exception){Toast.makeText(this@MainActivity,"Не удалось добавить город",Toast.LENGTH_LONG).show()}
+     val v=results[which];try{cityId=db.addCity(v.first,"",v.second,v.third);loadCities();selectCityInSpinner();refresh();moveCamera(v.second,v.third,13f)}catch(_:Exception){Toast.makeText(this@MainActivity,"Не удалось добавить город",Toast.LENGTH_LONG).show()}
     }.show()
    }
    override fun onSearchError(error:Error){Toast.makeText(this@MainActivity,if(error is NetworkError)"Нет сети для поиска" else "Ошибка поиска",Toast.LENGTH_LONG).show()}
@@ -454,6 +475,28 @@ class MainActivity:Activity(){
   val name=EditText(this);name.hint="Город";val country=EditText(this);country.hint="Страна";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,country,lat,lon).forEach{box.addView(it)}
   AlertDialog.Builder(this).setTitle("Добавить город").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addCity(name.text.toString().trim(),country.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble());loadCities();refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
  }
+ private fun showEditCity(){
+  val city=cities.firstOrNull{it.id==cityId}?:return
+  val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
+  val name=EditText(this);name.hint="Город";name.setText(city.name)
+  val country=EditText(this);country.hint="Страна";country.setText(city.country)
+  val lat=EditText(this);lat.hint="Широта";lat.setText(city.lat.toString())
+  val lon=EditText(this);lon.hint="Долгота";lon.setText(city.lon.toString())
+  listOf(name,country,lat,lon).forEach{box.addView(it)}
+  val builder=AlertDialog.Builder(this).setTitle("Редактировать город").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Сохранить"){_,_->
+   try{
+    db.updateCity(city.id,name.text.toString().trim(),country.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble())
+    loadCities();refresh()
+   }catch(e:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}
+  }
+  builder.setNeutralButton("Удалить"){_,_->
+   AlertDialog.Builder(this).setTitle("Удалить город?").setMessage("Будут удалены его объекты и линии.").setNegativeButton("Отмена",null).setPositiveButton("Удалить"){_,_->
+    db.deleteCity(city.id);cityId=0L;loadCities();refresh()
+   }.show()
+  }
+  builder.show()
+ }
+
  private fun showPlaceEditor(place:Place){
   val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
   val name=EditText(this);name.hint="Название";name.setText(place.name)
