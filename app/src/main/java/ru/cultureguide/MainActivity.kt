@@ -96,19 +96,25 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
 fun dist(a:Place,b:Place):Double{val r=6371.0088;val p1=Math.toRadians(a.lat);val p2=Math.toRadians(b.lat);val dp=Math.toRadians(b.lat-a.lat);val dl=Math.toRadians(b.lon-a.lon);val h=sin(dp/2).pow(2)+cos(p1)*cos(p2)*sin(dl/2).pow(2);return 2*r*asin(sqrt(h))}
 
 class MetroView(c:Context):View(c){
- var places:List<Place> = emptyList();var route:List<Place> = emptyList();val p=Paint(1)
+ var places:List<Place> = emptyList();var route:List<Place> = emptyList();var lines:List<RouteLine> = emptyList();var selectedLineId:Long?=null
+ private val p=Paint(1);private val colors=listOf(Color.rgb(49,94,251),Color.rgb(235,87,87),Color.rgb(39,174,96),Color.rgb(155,89,182),Color.rgb(242,153,74))
  override fun onDraw(c:Canvas){
-  c.drawColor(Color.rgb(248,249,251));p.color=Color.rgb(225,227,232);p.strokeWidth=1f
+  c.drawColor(Color.rgb(248,249,251));p.style=Paint.Style.STROKE;p.strokeWidth=1f;p.color=Color.rgb(225,227,232)
   for(x in 0..width step 40)c.drawLine(x.toFloat(),0f,x.toFloat(),height.toFloat(),p)
   for(y in 0..height step 40)c.drawLine(0f,y.toFloat(),width.toFloat(),y.toFloat(),p)
   if(places.isEmpty())return
   val la0=places.minOf{it.lat};val la1=places.maxOf{it.lat};val lo0=places.minOf{it.lon};val lo1=places.maxOf{it.lon}
-  fun xy(z:Place)=PointF((35+(z.lon-lo0)/((lo1-lo0).coerceAtLeast(1e-9))*(width-70)).toFloat(),(height-35-(z.lat-la0)/((la1-la0).coerceAtLeast(1e-9))*(height-70)).toFloat())
-  val o=if(route.isEmpty())places else route
-  p.color=Color.rgb(49,94,251);p.style=Paint.Style.STROKE;p.strokeWidth=9f;p.strokeCap=Paint.Cap.ROUND
-  for(i in 1 until o.size){val a=xy(o[i-1]);val b=xy(o[i]);c.drawLine(a.x,a.y,b.x,b.y,p)}
+  fun xy(z:Place)=PointF((45+(z.lon-lo0)/((lo1-lo0).coerceAtLeast(1e-9))*(width-90)).toFloat(),(height-45-(z.lat-la0)/((la1-la0).coerceAtLeast(1e-9))*(height-90)).toFloat())
+  val byId=places.associateBy{it.id}
+  for((idx,line) in lines.withIndex()){
+   if(selectedLineId!=null&&line.id!=selectedLineId)continue
+   val pts=line.placeIds.mapNotNull{byId[it]};if(pts.size<2)continue
+   p.style=Paint.Style.STROKE;p.strokeWidth=if(line.id==selectedLineId)12f else 7f;p.strokeCap=Paint.Cap.ROUND;p.color=colors[idx%colors.size]
+   for(i in 1 until pts.size){val aa=xy(pts[i-1]);val bb=xy(pts[i]);c.drawLine(aa.x,aa.y,bb.x,bb.y,p)}
+  }
   p.style=Paint.Style.FILL
-  for((i,z) in places.withIndex()){val q=xy(z);p.color=Color.WHITE;c.drawCircle(q.x,q.y,11f,p);p.color=Color.rgb(49,94,251);c.drawCircle(q.x,q.y,6f,p);p.color=Color.DKGRAY;p.textSize=21f;c.drawText("${i+1}",q.x+13,q.y+7,p)}
+  for((i,z) in places.withIndex()){val q=xy(z);p.color=Color.WHITE;c.drawCircle(q.x,q.y,13f,p);p.color=Color.DKGRAY;c.drawCircle(q.x,q.y,9f,p);p.color=Color.WHITE;c.drawCircle(q.x,q.y,4f,p);p.color=Color.DKGRAY;p.textSize=18f;c.drawText("${i+1}",q.x+15,q.y+6,p)}
+  if(route.size>1){p.style=Paint.Style.STROKE;p.strokeWidth=5f;p.color=Color.DKGRAY;for(i in 1 until route.size){val aa=xy(route[i-1]);val bb=xy(route[i]);c.drawLine(aa.x,aa.y,bb.x,bb.y,p)}}
  }
 }
 
@@ -119,7 +125,7 @@ class MainActivity:Activity(){
  private lateinit var list:LinearLayout
  private lateinit var status:TextView
  private lateinit var locationManager:LocationManager
- private var cityId=1L
+ private var cityId=0L
  private var cities:List<City> = emptyList()
  private var routeLines:List<RouteLine> = emptyList()
  private var selectedRoute:RouteLine?=null
@@ -156,16 +162,19 @@ class MainActivity:Activity(){
   val title=TextView(this);title.text="Культурный маршрут";title.textSize=25f;root.addView(title)
   citySpinner=Spinner(this);root.addView(citySpinner,LinearLayout.LayoutParams(-1,48))
   val tabs=LinearLayout(this)
+  val schemeBtn=Button(this);schemeBtn.text="Схема"
   val mapBtn=Button(this);mapBtn.text="Карта"
   val linesBtn=Button(this);linesBtn.text="Линии"
   val routeBtn=Button(this);routeBtn.text="Маршрут"
   val gpsBtn=Button(this);gpsBtn.text="GPS"
-  tabs.addView(mapBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(linesBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(routeBtn,LinearLayout.LayoutParams(0,52,1f));tabs.addView(gpsBtn,LinearLayout.LayoutParams(0,52,1f));root.addView(tabs)
-  mapView=MapView(this);root.addView(mapView,LinearLayout.LayoutParams(-1,0,1.35f))
-  schemeView=MetroView(this);schemeView.visibility=View.GONE;root.addView(schemeView,LinearLayout.LayoutParams(-1,0,1.35f))
+  for(btn in listOf(schemeBtn,mapBtn,linesBtn,routeBtn,gpsBtn))tabs.addView(btn,LinearLayout.LayoutParams(0,52,1f))
+  root.addView(tabs)
+  mapView=MapView(this);root.addView(mapView,LinearLayout.LayoutParams(-1,0,1.15f))
+  schemeView=MetroView(this);root.addView(schemeView,LinearLayout.LayoutParams(-1,0,1.15f))
   status=TextView(this);status.textSize=15f;status.setPadding(4,5,4,5);root.addView(status)
   val sv=ScrollView(this);list=LinearLayout(this);list.orientation=LinearLayout.VERTICAL;sv.addView(list);root.addView(sv,LinearLayout.LayoutParams(-1,0,1f))
   setContentView(root)
+  schemeBtn.setOnClickListener{showScheme()}
   mapBtn.setOnClickListener{showMap()}
   linesBtn.setOnClickListener{showLines()}
   routeBtn.setOnClickListener{buildRoute()}
@@ -180,8 +189,16 @@ class MainActivity:Activity(){
   cities=db.cities()
   val labels=cities.map{it.name+", "+it.country}
   citySpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,labels).apply{setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)}
-  val idx=cities.indexOfFirst{it.id==cityId}.coerceAtLeast(0)
-  citySpinner.setSelection(idx)
+  if(cities.isNotEmpty()){if(cityId==0L)cityId=cities.first().id;val idx=cities.indexOfFirst{it.id==cityId}.coerceAtLeast(0);citySpinner.setSelection(idx)}
+ }
+
+ private fun showScheme(){
+  mapView.visibility=View.GONE;schemeView.visibility=View.VISIBLE
+  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=routePlaces;schemeView.invalidate()
+  list.removeAllViews()
+  val title=TextView(this);title.text="Схема культурных маршрутов";title.textSize=20f;title.setPadding(8,8,8,8);list.addView(title)
+  for((index,line) in routeLines.withIndex()){val t=TextView(this);t.text=(index+1).toString()+". "+line.name+" · "+line.placeIds.size+" объектов\n"+line.description;t.textSize=16f;t.setPadding(14,12,8,12);t.setOnClickListener{selectRoute(line)};list.addView(t)}
+  status.text=routeLines.size.toString()+" линий · общие объекты = пересадки"
  }
 
  private fun showMap(){
@@ -203,7 +220,7 @@ class MainActivity:Activity(){
 
  private fun selectRoute(line:RouteLine){
   selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
-  schemeView.places=routePlaces;schemeView.route=routePlaces;schemeView.invalidate()
+  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=routePlaces;schemeView.invalidate()
   drawRoutesOnMap(line.id);list.removeAllViews()
   val head=TextView(this);head.text=line.name+"\n"+line.description;head.textSize=18f;head.setPadding(8,10,8,10);list.addView(head)
   routePlaces.forEachIndexed{index,p->
@@ -213,14 +230,14 @@ class MainActivity:Activity(){
  }
 
  private fun refresh(){
-  currentPlaces=db.places(cityId);schemeView.places=currentPlaces;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap()
+  routeLines=db.routes(cityId);currentPlaces=db.places(cityId);schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=null;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap()
   list.removeAllViews()
   currentPlaces.forEachIndexed{i,z->
    val t=TextView(this);t.text="${i+1}. ${z.name}\n${z.category}\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12)
    t.setOnClickListener{mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE;showPlace(z);moveCamera(z.lat,z.lon,16f)}
    list.addView(t)
   }
-  status.text="${currentPlaces.size} объектов · Яндекс Карты · метки загружены"
+  showScheme()
  }
 
  private fun drawPlacesOnMap(){
@@ -236,7 +253,7 @@ class MainActivity:Activity(){
     addTapListener(WeakReference(placeTapListener))
    }
   }
-  moveCamera(54.0820,61.5596,14f)
+  cities.firstOrNull{it.id==cityId}?.let{moveCamera(it.lat,it.lon,14f)}
  }
 
  private fun showUserLocation(lat:Double,lon:Double,center:Boolean){
@@ -283,7 +300,7 @@ class MainActivity:Activity(){
   val start=lastLocation?.let{location->source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}}?:source.first()
   val r=mutableListOf(start);val left=source.filter{it.id!=start.id}.toMutableList()
   while(left.isNotEmpty()){val next=left.minBy{dist(r.last(),it)};r+=next;left.remove(next)}
-  routePlaces=r;schemeView.places=source;schemeView.route=r;schemeView.invalidate()
+  routePlaces=r;schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=r;schemeView.invalidate()
   routePolyline?.let{mapView.mapWindow.map.mapObjects.remove(it)}
   val points=r.map{Point(it.lat,it.lon)}
   if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));strokeWidth=7f;zIndex=3f}}
