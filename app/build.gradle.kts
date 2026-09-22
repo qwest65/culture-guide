@@ -21,8 +21,8 @@ android {
         applicationId = "ru.cultureguide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.2.0"
         buildConfigField("String", "MAPKIT_API_KEY", "\"$mapkitApiKey\"")
     }
     buildFeatures { buildConfig = true }
