@@ -31,12 +31,27 @@ jobs:
         env:
           MAPKIT_API_KEY: ${{ secrets.MAPKIT_API_KEY }}
         run: gradle assembleDebug --stacktrace
-      - name: Prepare release APK
-        run: cp app/build/outputs/apk/debug/*.apk CultureGuide.apk
+      - name: Read version
+        id: version
+        run: |
+          VERSION_NAME=$(grep 'versionName' app/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          VERSION_CODE=$(grep 'versionCode' app/build.gradle.kts | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "version_name=$VERSION_NAME" >> "$GITHUB_OUTPUT"
+          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+          echo "APK version: $VERSION_NAME ($VERSION_CODE), commit $SHORT_SHA"
+      - name: Prepare versioned APK
+        run: |
+          cp app/build/outputs/apk/debug/*.apk "CultureGuide-v${{ steps.version.outputs.version_name }}+${{ steps.version.outputs.short_sha }}.apk"
+          cp app/build/outputs/apk/debug/*.apk CultureGuide.apk
+          ls -lh CultureGuide*.apk
       - uses: actions/upload-artifact@v4
         with:
-          name: TroitskGuide-debug-apk
-          path: CultureGuide.apk
+          name: CultureGuide-v${{ steps.version.outputs.version_name }}-${{ steps.version.outputs.short_sha }}
+          path: |
+            CultureGuide.apk
+            CultureGuide-v*.apk
           if-no-files-found: error
       - name: Publish latest APK release
         env:
@@ -45,8 +60,5 @@ jobs:
           if gh release view latest >/dev/null 2>&1; then
             gh release upload latest CultureGuide.apk --clobber
           else
-            gh release create latest CultureGuide.apk \
-              --title "CultureGuide — latest" \
-              --notes "Последняя успешная Android-сборка CultureGuide."
+            gh release create latest CultureGuide.apk               --title "CultureGuide — latest"               --notes "Последняя успешная Android-сборка CultureGuide."
           fi
-# Trigger rebuild after configuring MAPKIT_API_KEY
