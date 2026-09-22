@@ -96,25 +96,148 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,3){
 fun dist(a:Place,b:Place):Double{val r=6371.0088;val p1=Math.toRadians(a.lat);val p2=Math.toRadians(b.lat);val dp=Math.toRadians(b.lat-a.lat);val dl=Math.toRadians(b.lon-a.lon);val h=sin(dp/2).pow(2)+cos(p1)*cos(p2)*sin(dl/2).pow(2);return 2*r*asin(sqrt(h))}
 
 class MetroView(c:Context):View(c){
- var places:List<Place> = emptyList();var route:List<Place> = emptyList();var lines:List<RouteLine> = emptyList();var selectedLineId:Long?=null
- private val p=Paint(1);private val colors=listOf(Color.rgb(49,94,251),Color.rgb(235,87,87),Color.rgb(39,174,96),Color.rgb(155,89,182),Color.rgb(242,153,74))
+ var places:List<Place> = emptyList()
+ var route:List<Place> = emptyList()
+ var lines:List<RouteLine> = emptyList()
+ var selectedLineId:Long?=null
+
+ private val p=Paint(Paint.ANTI_ALIAS_FLAG)
+ private val colors=listOf(
+  Color.rgb(49,94,251),
+  Color.rgb(235,87,87),
+  Color.rgb(39,174,96),
+  Color.rgb(155,89,182),
+  Color.rgb(242,153,74)
+ )
+
  override fun onDraw(c:Canvas){
-  c.drawColor(Color.rgb(248,249,251));p.style=Paint.Style.STROKE;p.strokeWidth=1f;p.color=Color.rgb(225,227,232)
-  for(x in 0..width step 40)c.drawLine(x.toFloat(),0f,x.toFloat(),height.toFloat(),p)
-  for(y in 0..height step 40)c.drawLine(0f,y.toFloat(),width.toFloat(),y.toFloat(),p)
-  if(places.isEmpty())return
-  val la0=places.minOf{it.lat};val la1=places.maxOf{it.lat};val lo0=places.minOf{it.lon};val lo1=places.maxOf{it.lon}
-  fun xy(z:Place)=PointF((45+(z.lon-lo0)/((lo1-lo0).coerceAtLeast(1e-9))*(width-90)).toFloat(),(height-45-(z.lat-la0)/((la1-la0).coerceAtLeast(1e-9))*(height-90)).toFloat())
+  super.onDraw(c)
+  c.drawColor(Color.WHITE)
+  if(places.isEmpty()||lines.isEmpty())return
+
   val byId=places.associateBy{it.id}
-  for((idx,line) in lines.withIndex()){
-   if(selectedLineId!=null&&line.id!=selectedLineId)continue
-   val pts=line.placeIds.mapNotNull{byId[it]};if(pts.size<2)continue
-   p.style=Paint.Style.STROKE;p.strokeWidth=if(line.id==selectedLineId)12f else 7f;p.strokeCap=Paint.Cap.ROUND;p.color=colors[idx%colors.size]
-   for(i in 1 until pts.size){val aa=xy(pts[i-1]);val bb=xy(pts[i]);c.drawLine(aa.x,aa.y,bb.x,bb.y,p)}
+  val routeCount=lines.size.coerceAtLeast(1)
+
+  // Schematic metro-style layout:
+  // X is derived from station order, not geographic coordinates.
+  // Shared stations get one common node and therefore act as transfers.
+  val orderByPlace=mutableMapOf<Long,MutableList<Float>>()
+  for(line in lines){
+   val last=(line.placeIds.size-1).coerceAtLeast(1)
+   line.placeIds.forEachIndexed{index,id->
+    orderByPlace.getOrPut(id){mutableListOf()}.add(index.toFloat()/last.toFloat())
+   }
   }
-  p.style=Paint.Style.FILL
-  for((i,z) in places.withIndex()){val q=xy(z);p.color=Color.WHITE;c.drawCircle(q.x,q.y,13f,p);p.color=Color.DKGRAY;c.drawCircle(q.x,q.y,9f,p);p.color=Color.WHITE;c.drawCircle(q.x,q.y,4f,p);p.color=Color.DKGRAY;p.textSize=18f;c.drawText("${i+1}",q.x+15,q.y+6,p)}
-  if(route.size>1){p.style=Paint.Style.STROKE;p.strokeWidth=5f;p.color=Color.DKGRAY;for(i in 1 until route.size){val aa=xy(route[i-1]);val bb=xy(route[i]);c.drawLine(aa.x,aa.y,bb.x,bb.y,p)}}
+
+  val left=58f
+  val right=(width-58).coerceAtLeast(left+1f)
+  val top=58f
+  val bottom=(height-58).coerceAtLeast(top+1f)
+  val laneStep=if(routeCount==1)0f else (bottom-top)/(routeCount-1).toFloat()
+
+  val positions=mutableMapOf<Long,PointF>()
+  for((id,orders) in orderByPlace){
+   val normalized=orders.average().toFloat().coerceIn(0f,1f)
+   val x=left+normalized*(right-left)
+   val routeIndexes=lines.mapIndexedNotNull{idx,line->if(id in line.placeIds)idx else null}
+   val y=if(routeIndexes.isEmpty())top else top+routeIndexes.average().toFloat()*laneStep
+   positions[id]=PointF(x,y)
+  }
+
+  // Background guide lanes.
+  p.style=Paint.Style.STROKE
+  p.strokeWidth=1f
+  p.color=Color.rgb(232,234,238)
+  for(i in lines.indices){
+   val y=top+i*laneStep
+   c.drawLine(left,y,right,y,p)
+  }
+
+  // Draw route lines with rounded, metro-like strokes.
+  for((index,line) in lines.withIndex()){
+   val pts=line.placeIds.mapNotNull{positions[it]}
+   if(pts.size<2)continue
+   val color=colors[index%colors.size]
+   p.style=Paint.Style.STROKE
+   p.strokeWidth=if(line.id==selectedLineId)14f else 9f
+   p.strokeCap=Paint.Cap.ROUND
+   p.strokeJoin=Paint.Join.ROUND
+   p.color=color
+
+   for(i in 1 until pts.size){
+    val a=pts[i-1]
+    val b=pts[i]
+    if(abs(a.y-b.y)<2f){
+     c.drawLine(a.x,a.y,b.x,b.y,p)
+    }else{
+     // Orthogonal connector at transfers; avoids long diagonal spaghetti.
+     val midX=(a.x+b.x)/2f
+     c.drawLine(a.x,a.y,midX,a.y,p)
+     c.drawLine(midX,a.y,midX,b.y,p)
+     c.drawLine(midX,b.y,b.x,b.y,p)
+    }
+   }
+  }
+
+  // Highlight the generated walking order, if present.
+  if(route.size>1){
+   p.style=Paint.Style.STROKE
+   p.strokeWidth=4f
+   p.strokeCap=Paint.Cap.ROUND
+   p.color=Color.DKGRAY
+   for(i in 1 until route.size){
+    val a=positions[route[i-1].id]?:continue
+    val b=positions[route[i].id]?:continue
+    c.drawLine(a.x,a.y,b.x,b.y,p)
+   }
+  }
+
+  // Station nodes. Shared nodes are larger and get a dark transfer ring.
+  val transferIds=places.map{place->
+   place.id to lines.count{place.id in it.placeIds}
+  }.filter{it.second>1}.map{it.first}.toSet()
+
+  p.textAlign=Paint.Align.CENTER
+  for((index,place) in places.withIndex()){
+   val q=positions[place.id]?:continue
+   val transfer=place.id in transferIds
+   val radius=if(transfer)15f else 11f
+
+   p.style=Paint.Style.FILL
+   p.color=Color.WHITE
+   c.drawCircle(q.x,q.y,radius+3f,p)
+   p.color=Color.DKGRAY
+   c.drawCircle(q.x,q.y,radius,p)
+
+   if(transfer){
+    p.color=Color.WHITE
+    c.drawCircle(q.x,q.y,radius-5f,p)
+   }
+
+   p.color=Color.DKGRAY
+   p.textSize=14f
+   p.typeface=android.graphics.Typeface.DEFAULT_BOLD
+   c.drawText((index+1).toString(),q.x,q.y+5f,p)
+  }
+
+  // Compact legend at the bottom. Names remain in the list below the scheme.
+  p.textAlign=Paint.Align.LEFT
+  p.typeface=android.graphics.Typeface.DEFAULT
+  p.textSize=13f
+  for((index,line) in lines.withIndex()){
+   val x=16f+(index%2)*(width/2f)
+   val y=height-18f-(index/2)*22f
+   p.style=Paint.Style.STROKE
+   p.strokeWidth=6f
+   p.strokeCap=Paint.Cap.ROUND
+   p.color=colors[index%colors.size]
+   c.drawLine(x,y,x+24f,y,p)
+   p.style=Paint.Style.FILL
+   p.color=Color.DKGRAY
+   c.drawText((index+1).toString()+" "+line.name,x+32f,y+5f,p)
+  }
+
+  p.textAlign=Paint.Align.LEFT
  }
 }
 
@@ -303,7 +426,7 @@ class MainActivity:Activity(){
   routePlaces=r;schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=r;schemeView.invalidate()
   routePolyline?.let{mapView.mapWindow.map.mapObjects.remove(it)}
   val points=r.map{Point(it.lat,it.lon)}
-  if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));strokeWidth=7f;zIndex=3f}}
+  if(points.size>1){routePolyline=mapView.mapWindow.map.mapObjects.addPolyline(Polyline(points)).apply{setStrokeColor(Color.rgb(49,94,251));setStrokeWidth(7f);zIndex=3f}}
   lastLocation?.let{showUserLocation(it.latitude,it.longitude,false)}
   showMap()
   val km=r.zipWithNext().sumOf{dist(it.first,it.second)}
