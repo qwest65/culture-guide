@@ -451,11 +451,21 @@ class MainActivity:Activity(){
  private fun buildRoute(){
   val source=if(routePlaces.isNotEmpty())routePlaces else currentPlaces
   if(source.size<2){Toast.makeText(this,"Для маршрута нужно минимум 2 объекта",Toast.LENGTH_LONG).show();return}
-  val start=lastLocation?.let{location->
-   source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}
-  }?:source.first()
-  val ordered=mutableListOf(start);val left=source.filter{it.id!=start.id}.toMutableList()
-  while(left.isNotEmpty()){val next=left.minBy{dist(ordered.last(),it)};ordered+=next;left.remove(next)}
+  val ordered=if(selectedRoute!=null){
+   val nearestIndex=lastLocation?.let{location->
+    source.indices.minByOrNull{index->
+     val place=source[index];val result=FloatArray(1)
+     Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]
+    }
+   }?:0
+   source.drop(nearestIndex)+source.take(nearestIndex)
+  }else{
+   val start=lastLocation?.let{location->
+    source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}
+   }?:source.first()
+   val r=mutableListOf(start);val left=source.filter{it.id!=start.id}.toMutableList()
+   while(left.isNotEmpty()){val next=left.minBy{dist(r.last(),it)};r+=next;left.remove(next)};r
+  }
   routePlaces=ordered
   routeBuildToken++
   val token=routeBuildToken
@@ -464,20 +474,21 @@ class MainActivity:Activity(){
   routePolyline=null
   lastLocation?.let{showUserLocation(it.latitude,it.longitude,false)}
   showMap()
-  status.text="Строю пешеходный маршрут… 0/"+(ordered.size-1)
-  buildPedestrianLegs(ordered,0,token)
+  val startPoint=lastLocation?.let{Point(it.latitude,it.longitude)}
+  val routePoints=mutableListOf<Point>();if(startPoint!=null)routePoints+=startPoint;routePoints+=ordered.map{Point(it.lat,it.lon)}
+  status.text="Строю пешеходный маршрут… 0/"+(routePoints.size-1)
+  buildPedestrianLegs(routePoints,0,token,ordered.size)
  }
 
- private fun buildPedestrianLegs(points:List<Place>,index:Int,token:Int){
+ private fun buildPedestrianLegs(points:List<Point>,index:Int,token:Int,stopCount:Int){
   if(token!=routeBuildToken)return
   if(index>=points.size-1){
-   status.text="Пешеходный маршрут построен · "+points.size+" остановок"
+   status.text="Пешеходный маршрут построен · "+stopCount+" остановок"
    return
   }
-  val from=points[index];val to=points[index+1]
   val requestPoints=listOf(
-   com.yandex.mapkit.RequestPoint(Point(from.lat,from.lon),com.yandex.mapkit.RequestPointType.WAYPOINT,null,null,null),
-   com.yandex.mapkit.RequestPoint(Point(to.lat,to.lon),com.yandex.mapkit.RequestPointType.WAYPOINT,null,null,null)
+   com.yandex.mapkit.RequestPoint(points[index],com.yandex.mapkit.RequestPointType.WAYPOINT,null,null,null),
+   com.yandex.mapkit.RequestPoint(points[index+1],com.yandex.mapkit.RequestPointType.WAYPOINT,null,null,null)
   )
   val router=pedestrianRouter
   if(router==null){Toast.makeText(this,"Пешеходный роутер недоступен",Toast.LENGTH_LONG).show();return}
@@ -485,13 +496,12 @@ class MainActivity:Activity(){
    override fun onMasstransitRoutes(routes:MutableList<com.yandex.mapkit.transport.masstransit.Route>){
     if(token!=routeBuildToken)return
     if(routes.isEmpty()){Toast.makeText(this@MainActivity,"Не удалось построить участок "+(index+1),Toast.LENGTH_LONG).show();return}
-    val geometry=routes[0].geometry
-    val line=mapView.mapWindow.map.mapObjects.addPolyline(geometry).apply{
+    val line=mapView.mapWindow.map.mapObjects.addPolyline(routes[0].geometry).apply{
      setStrokeColor(Color.rgb(49,94,251));setStrokeWidth(8f);zIndex=3f
     }
     routePolylines+=line
     status.text="Пешеходный маршрут… "+(index+1)+"/"+(points.size-1)
-    buildPedestrianLegs(points,index+1,token)
+    buildPedestrianLegs(points,index+1,token,stopCount)
    }
    override fun onMasstransitRoutesError(error:Error){
     if(token!=routeBuildToken)return
