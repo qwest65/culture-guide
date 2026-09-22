@@ -635,7 +635,7 @@ class MainActivity:Activity(){
   val lines=db.routesForPlace(cityId,p.id)
   val lineText=if(lines.isEmpty())"Линии: —" else "Линии: "+lines.joinToString(", "){it.name}
   val box=TextView(this)
-  box.text=p.category+"\n\n"+p.description+"\n\nАдрес: "+p.address+"\n\nКоординаты: "+"%.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)+"\n\n"+lineText
+  box.text=p.category+"\n\n"+p.description+"\n\nАдрес: "+p.address+"\n\nКоординаты: "+"%.6f, %.6f".format(java.util.Locale.US,p.lat,p.lon)+"\n\nИсточник: "+(p.sourceUrl.ifBlank{"—"})+"\nИзображение: "+(p.imageUrl.ifBlank{"—"})+"\n\n"+lineText
   box.textSize=16f;box.setPadding(28,8,28,8)
   val builder=AlertDialog.Builder(this).setTitle(p.name).setView(box).setPositiveButton("Открыть карту"){_,_->openMap(p)}.setNegativeButton("Закрыть",null)
   if(lines.size>1)builder.setNeutralButton("Показать пересечения"){_,_->showLines()}
