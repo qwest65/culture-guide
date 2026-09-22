@@ -280,7 +280,7 @@ class MainActivity:Activity(){
   tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,58))
   val adminRow=LinearLayout(this);adminRow.orientation=LinearLayout.HORIZONTAL
   fun adminButton(text:String,onClick:()->Unit){val b=Button(this);b.text=text;b.setAllCaps(false);b.setOnClickListener{onClick()};adminRow.addView(b,LinearLayout.LayoutParams(0,50,1f))}
-  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Объект"){showAddPlace()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
+  adminButton("Город"){showAddCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
   val mapLayer=FrameLayout(this)
   mapView=MapView(this)
   schemeView=MetroView(this)
@@ -322,6 +322,35 @@ class MainActivity:Activity(){
     val labels=results.map{it.first+" · %.5f, %.5f".format(java.util.Locale.US,it.second,it.third)}
     AlertDialog.Builder(this@MainActivity).setTitle("Выберите город").setItems(labels.toTypedArray()){_,which->
      val v=results[which];try{db.addCity(v.first,"",v.second,v.third);loadCities();cityId=db.cities().lastOrNull()?.id?:cityId;refresh();moveCamera(v.second,v.third,13f)}catch(_:Exception){Toast.makeText(this@MainActivity,"Не удалось добавить город",Toast.LENGTH_LONG).show()}
+    }.show()
+   }
+   override fun onSearchError(error:Error){Toast.makeText(this@MainActivity,if(error is NetworkError)"Нет сети для поиска" else "Ошибка поиска",Toast.LENGTH_LONG).show()}
+  })
+ }
+ private fun searchPlace(){
+  val input=EditText(this);input.hint="Например: музей, усадьба, собор";input.setSingleLine(true)
+  AlertDialog.Builder(this).setTitle("Найти культурный объект").setView(input).setNegativeButton("Отмена",null).setPositiveButton("Искать"){_,_->submitPlaceSearch(input.text.toString().trim())}.show()
+ }
+ private fun submitPlaceSearch(query:String){
+  if(query.isBlank()||cityId==0L)return
+  val city=cities.firstOrNull{it.id==cityId}?:return
+  moveCamera(city.lat,city.lon,14f)
+  val polygon=com.yandex.mapkit.map.VisibleRegionUtils.toPolygon(mapView.mapWindow.map.visibleRegion)
+  searchSession=searchManager.submit(query,polygon,SearchOptions(),object:SearchSession.SearchListener{
+   override fun onSearchResponse(response:Response){
+    val results=response.collection.children.mapNotNull{item->
+     val obj=item.obj ?: return@mapNotNull null
+     val point=obj.geometry.firstOrNull()?.point ?: return@mapNotNull null
+     Triple(obj,point)
+    }.take(10)
+    if(results.isEmpty()){Toast.makeText(this@MainActivity,"Объекты не найдены",Toast.LENGTH_LONG).show();return}
+    val labels=results.map{(obj,point)->(obj.name?:"Без названия")+" · %.5f, %.5f".format(java.util.Locale.US,point.latitude,point.longitude)}
+    AlertDialog.Builder(this@MainActivity).setTitle("Добавить объект").setItems(labels.toTypedArray()){_,which->
+     val (obj,point)=results[which]
+     try{
+      db.addPlace(cityId,obj.name?:"Без названия","Культура",obj.descriptionText?:"Найдено через Yandex Search","",point.latitude,point.longitude)
+      refresh();showMap();moveCamera(point.latitude,point.longitude,16f)
+     }catch(e:Exception){Toast.makeText(this@MainActivity,"Не удалось сохранить объект: "+e.message,Toast.LENGTH_LONG).show()}
     }.show()
    }
    override fun onSearchError(error:Error){Toast.makeText(this@MainActivity,if(error is NetworkError)"Нет сети для поиска" else "Ошибка поиска",Toast.LENGTH_LONG).show()}
