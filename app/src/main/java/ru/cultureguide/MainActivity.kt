@@ -107,7 +107,10 @@ class MetroView(c:Context):View(c){
  )
  override fun onDraw(c:Canvas){
   super.onDraw(c)
-  c.drawColor(Color.WHITE)
+  // Keep the Yandex map visible underneath the schematic.
+  p.style=Paint.Style.FILL
+  p.color=Color.argb(205,255,255,255)
+  c.drawRoundRect(8f,8f,width.toFloat()-8f,height.toFloat()-8f,18f,18f,p)
   if(places.isEmpty()||lines.isEmpty())return
   val byId=places.associateBy{it.id}
   val positions=HashMap<Long,PointF>()
@@ -267,10 +270,20 @@ class MainActivity:Activity(){
   val linesBtn=Button(this);linesBtn.text="Линии"
   val routeBtn=Button(this);routeBtn.text="Маршрут"
   val gpsBtn=Button(this);gpsBtn.text="GPS"
-  for(btn in listOf(schemeBtn,mapBtn,linesBtn,routeBtn,gpsBtn))tabs.addView(btn,LinearLayout.LayoutParams(0,52,1f))
+  for(btn in listOf(schemeBtn,mapBtn,linesBtn,routeBtn,gpsBtn)){
+   btn.setTextColor(Color.DKGRAY)
+   btn.setAllCaps(false)
+   btn.setBackgroundColor(Color.WHITE)
+   tabs.addView(btn,LinearLayout.LayoutParams(0,52,1f))
+  }
   root.addView(tabs)
-  mapView=MapView(this);root.addView(mapView,LinearLayout.LayoutParams(-1,0,1.15f))
-  schemeView=MetroView(this);root.addView(schemeView,LinearLayout.LayoutParams(-1,0,1.15f))
+  val mapLayer=FrameLayout(this)
+  mapView=MapView(this)
+  schemeView=MetroView(this)
+  schemeView.setBackgroundColor(Color.TRANSPARENT)
+  mapLayer.addView(mapView,FrameLayout.LayoutParams(-1,-1))
+  mapLayer.addView(schemeView,FrameLayout.LayoutParams(-1,-1))
+  root.addView(mapLayer,LinearLayout.LayoutParams(-1,0,1.15f))
   status=TextView(this);status.textSize=15f;status.setPadding(4,5,4,5);root.addView(status)
   val sv=ScrollView(this);list=LinearLayout(this);list.orientation=LinearLayout.VERTICAL;sv.addView(list);root.addView(sv,LinearLayout.LayoutParams(-1,0,1f))
   setContentView(root)
@@ -293,7 +306,7 @@ class MainActivity:Activity(){
  }
 
  private fun showScheme(){
-  mapView.visibility=View.GONE;schemeView.visibility=View.VISIBLE
+  mapView.visibility=View.VISIBLE;schemeView.visibility=View.VISIBLE
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=selectedRoute?.id;schemeView.route=routePlaces;schemeView.invalidate()
   list.removeAllViews()
   val title=TextView(this);title.text="Схема культурных маршрутов";title.textSize=20f;title.setPadding(8,8,8,8);list.addView(title)
