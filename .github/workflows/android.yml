@@ -3,6 +3,8 @@ on:
   push:
     branches: ["main"]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -17,8 +19,21 @@ jobs:
           gradle-version: "8.9"
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
+      - name: Prepare release APK
+        run: cp app/build/outputs/apk/debug/*.apk CultureGuide.apk
       - uses: actions/upload-artifact@v4
         with:
           name: TroitskGuide-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: CultureGuide.apk
           if-no-files-found: error
+      - name: Publish latest APK release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view latest >/dev/null 2>&1; then
+            gh release upload latest CultureGuide.apk --clobber
+          else
+            gh release create latest CultureGuide.apk \
+              --title "CultureGuide — latest" \
+              --notes "Последняя успешная Android-сборка CultureGuide."
+          fi
