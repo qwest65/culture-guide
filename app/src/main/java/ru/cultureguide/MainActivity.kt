@@ -100,143 +100,120 @@ class MetroView(c:Context):View(c){
  var route:List<Place> = emptyList()
  var lines:List<RouteLine> = emptyList()
  var selectedLineId:Long?=null
-
- private val p=Paint(Paint.ANTI_ALIAS_FLAG)
- private val colors=listOf(
-  Color.rgb(49,94,251),
-  Color.rgb(235,87,87),
-  Color.rgb(39,174,96),
-  Color.rgb(155,89,182),
-  Color.rgb(242,153,74)
+ private val p=Paint(1)
+ private val colors=intArrayOf(
+  Color.rgb(49,94,251),Color.rgb(235,87,87),Color.rgb(39,174,96),
+  Color.rgb(155,89,182),Color.rgb(242,153,74)
  )
-
  override fun onDraw(c:Canvas){
   super.onDraw(c)
   c.drawColor(Color.WHITE)
   if(places.isEmpty()||lines.isEmpty())return
-
   val byId=places.associateBy{it.id}
-  val routeCount=lines.size.coerceAtLeast(1)
+  val positions=HashMap<Long,PointF>()
+  val laneStep=if(lines.size<=1)0f else (height-100f)/(lines.size-1).toFloat()
+  val left=55f
+  val right=(width-55f).coerceAtLeast(left+1f)
+  val top=45f
 
-  // Schematic metro-style layout:
-  // X is derived from station order, not geographic coordinates.
-  // Shared stations get one common node and therefore act as transfers.
-  val orderByPlace=mutableMapOf<Long,MutableList<Float>>()
-  for(line in lines){
-   val last=(line.placeIds.size-1).coerceAtLeast(1)
-   line.placeIds.forEachIndexed{index,id->
-    orderByPlace.getOrPut(id){mutableListOf()}.add(index.toFloat()/last.toFloat())
+  for((lineIndex,line) in lines.withIndex()){
+   val count=line.placeIds.size
+   if(count==0)continue
+   for((stationIndex,id) in line.placeIds.withIndex()){
+    val x=if(count==1)(left+right)/2f else left+(right-left)*stationIndex.toFloat()/(count-1).toFloat()
+    val y=top+lineIndex.toFloat()*laneStep
+    val old=positions[id]
+    if(old==null)positions[id]=PointF(x,y)
+    else positions[id]=PointF((old.x+x)/2f,(old.y+y)/2f)
    }
   }
 
-  val left=58f
-  val right=(width-58).coerceAtLeast(left+1f)
-  val top=58f
-  val bottom=(height-58).coerceAtLeast(top+1f)
-  val laneStep=if(routeCount==1)0f else (bottom-top)/(routeCount-1).toFloat()
-
-  val positions=mutableMapOf<Long,PointF>()
-  for((id,orders) in orderByPlace){
-   val normalized=orders.average().toFloat().coerceIn(0f,1f)
-   val x=left+normalized*(right-left)
-   val routeIndexes=lines.mapIndexedNotNull{idx,line->if(id in line.placeIds)idx else null}
-   val y=if(routeIndexes.isEmpty())top else top+routeIndexes.average().toFloat()*laneStep
-   positions[id]=PointF(x,y)
-  }
-
-  // Background guide lanes.
+  // Faint guide lanes.
   p.style=Paint.Style.STROKE
   p.strokeWidth=1f
   p.color=Color.rgb(232,234,238)
   for(i in lines.indices){
-   val y=top+i*laneStep
+   val y=top+i.toFloat()*laneStep
    c.drawLine(left,y,right,y,p)
   }
 
-  // Draw route lines with rounded, metro-like strokes.
+  // Route strokes. Transfers use short orthogonal connectors.
   for((index,line) in lines.withIndex()){
    val pts=line.placeIds.mapNotNull{positions[it]}
    if(pts.size<2)continue
-   val color=colors[index%colors.size]
    p.style=Paint.Style.STROKE
    p.strokeWidth=if(line.id==selectedLineId)14f else 9f
    p.strokeCap=Paint.Cap.ROUND
    p.strokeJoin=Paint.Join.ROUND
-   p.color=color
-
+   p.color=colors[index%colors.size]
    for(i in 1 until pts.size){
     val a=pts[i-1]
     val b=pts[i]
-    if(abs(a.y-b.y)<2f){
+    if(kotlin.math.abs(a.y-b.y)<3f){
      c.drawLine(a.x,a.y,b.x,b.y,p)
     }else{
-     // Orthogonal connector at transfers; avoids long diagonal spaghetti.
-     val midX=(a.x+b.x)/2f
-     c.drawLine(a.x,a.y,midX,a.y,p)
-     c.drawLine(midX,a.y,midX,b.y,p)
-     c.drawLine(midX,b.y,b.x,b.y,p)
+     val mid=(a.x+b.x)/2f
+     c.drawLine(a.x,a.y,mid,a.y,p)
+     c.drawLine(mid,a.y,mid,b.y,p)
+     c.drawLine(mid,b.y,b.x,b.y,p)
     }
    }
   }
 
-  // Highlight the generated walking order, if present.
+  // Generated walking route.
   if(route.size>1){
    p.style=Paint.Style.STROKE
    p.strokeWidth=4f
    p.strokeCap=Paint.Cap.ROUND
    p.color=Color.DKGRAY
    for(i in 1 until route.size){
-    val a=positions[route[i-1].id]?:continue
-    val b=positions[route[i].id]?:continue
-    c.drawLine(a.x,a.y,b.x,b.y,p)
+    val a=positions[route[i-1].id]
+    val b=positions[route[i].id]
+    if(a!=null&&b!=null)c.drawLine(a.x,a.y,b.x,b.y,p)
    }
   }
 
-  // Station nodes. Shared nodes are larger and get a dark transfer ring.
-  val transferIds=places.map{place->
-   place.id to lines.count{place.id in it.placeIds}
-  }.filter{it.second>1}.map{it.first}.toSet()
-
-  p.textAlign=Paint.Align.CENTER
+  // Stations and transfer rings.
   for((index,place) in places.withIndex()){
    val q=positions[place.id]?:continue
-   val transfer=place.id in transferIds
+   val transfer=lines.count{place.id in it.placeIds}>1
    val radius=if(transfer)15f else 11f
-
    p.style=Paint.Style.FILL
    p.color=Color.WHITE
    c.drawCircle(q.x,q.y,radius+3f,p)
    p.color=Color.DKGRAY
    c.drawCircle(q.x,q.y,radius,p)
-
    if(transfer){
     p.color=Color.WHITE
     c.drawCircle(q.x,q.y,radius-5f,p)
    }
-
    p.color=Color.DKGRAY
    p.textSize=14f
    p.typeface=android.graphics.Typeface.DEFAULT_BOLD
+   p.textAlign=Paint.Align.CENTER
    c.drawText((index+1).toString(),q.x,q.y+5f,p)
   }
 
-  // Compact legend at the bottom. Names remain in the list below the scheme.
+  // Legend.
   p.textAlign=Paint.Align.LEFT
   p.typeface=android.graphics.Typeface.DEFAULT
-  p.textSize=13f
-  for((index,line) in lines.withIndex()){
-   val x=16f+(index%2)*(width/2f)
-   val y=height-18f-(index/2)*22f
+  p.textSize=12f
+  val columns=2
+  val rows=(lines.size+columns-1)/columns
+  for(i in lines.indices){
+   val col=i%columns
+   val row=i/columns
+   val x=14f+col*(width/2f)
+   val y=height-12f-(rows-1-row)*20f
    p.style=Paint.Style.STROKE
    p.strokeWidth=6f
    p.strokeCap=Paint.Cap.ROUND
-   p.color=colors[index%colors.size]
-   c.drawLine(x,y,x+24f,y,p)
+   p.color=colors[i%colors.size]
+   c.drawLine(x,y,x+22f,y,p)
    p.style=Paint.Style.FILL
    p.color=Color.DKGRAY
-   c.drawText((index+1).toString()+" "+line.name,x+32f,y+5f,p)
+   c.drawText((i+1).toString()+" "+lines[i].name,x+30f,y+4f,p)
   }
-
   p.textAlign=Paint.Align.LEFT
  }
 }
