@@ -117,6 +117,11 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,4){
    bindLong(1,cityId);bindString(2,name);bindString(3,category);bindString(4,description);bindString(5,address);bindDouble(6,lat);bindDouble(7,lon);bindString(8,sourceUrl);bindString(9,imageUrl)
   }.executeInsert()
  }
+ fun updatePlace(placeId:Long,name:String,category:String,description:String,address:String,lat:Double,lon:Double,sourceUrl:String,imageUrl:String){
+  writableDatabase.compileStatement("UPDATE places SET name=?,category=?,description=?,address=?,lat=?,lon=?,source_url=?,image_url=? WHERE id=?").apply{
+   bindString(1,name);bindString(2,category);bindString(3,description);bindString(4,address);bindDouble(5,lat);bindDouble(6,lon);bindString(7,sourceUrl);bindString(8,imageUrl);bindLong(9,placeId)
+  }.executeUpdateDelete()
+ }
  fun createRoute(cityId:Long,name:String,description:String):Long{
   return writableDatabase.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)").apply{
    bindLong(1,cityId);bindString(2,name);bindString(3,description)
@@ -449,6 +454,26 @@ class MainActivity:Activity(){
   val name=EditText(this);name.hint="Город";val country=EditText(this);country.hint="Страна";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,country,lat,lon).forEach{box.addView(it)}
   AlertDialog.Builder(this).setTitle("Добавить город").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addCity(name.text.toString().trim(),country.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble());loadCities();refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
  }
+ private fun showPlaceEditor(place:Place){
+  val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
+  val name=EditText(this);name.hint="Название";name.setText(place.name)
+  val cat=EditText(this);cat.hint="Категория";cat.setText(place.category)
+  val desc=EditText(this);desc.hint="Описание";desc.setText(place.description);desc.minLines=2
+  val address=EditText(this);address.hint="Адрес";address.setText(place.address)
+  val lat=EditText(this);lat.hint="Широта";lat.setText(place.lat.toString())
+  val lon=EditText(this);lon.hint="Долгота";lon.setText(place.lon.toString())
+  val source=EditText(this);source.hint="Источник (URL)";source.setText(place.sourceUrl)
+  val image=EditText(this);image.hint="Изображение (URL)";image.setText(place.imageUrl)
+  listOf(name,cat,desc,address,lat,lon,source,image).forEach{box.addView(it)}
+  AlertDialog.Builder(this).setTitle("Редактировать объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Сохранить"){_,_->
+   try{
+    db.updatePlace(place.id,name.text.toString().trim(),cat.text.toString().trim(),desc.text.toString().trim(),address.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble(),source.text.toString().trim(),image.text.toString().trim())
+    refresh()
+    Toast.makeText(this,"Объект сохранён",Toast.LENGTH_SHORT).show()
+   }catch(e:Exception){Toast.makeText(this,"Не удалось сохранить объект: "+(e.message?:"проверьте данные"),Toast.LENGTH_LONG).show()}
+  }.show()
+ }
+
  private fun showRouteEditor(route:RouteLine?){
   if(cityId==0L)return
   val allPlaces=currentPlaces
@@ -575,7 +600,7 @@ class MainActivity:Activity(){
   if(schemeMode)showScheme() else {showMap();drawRoutesOnMap(line.id)};list.removeAllViews()
   val head=TextView(this);head.text=line.name+"\n"+line.description;head.textSize=18f;head.setPadding(8,10,8,10);list.addView(head)
   routePlaces.forEachIndexed{index,p->
-   val t=TextView(this);t.text=(index+1).toString()+". "+p.name+"\n"+p.category+"\n"+p.address;t.textSize=16f;t.setPadding(8,10,8,10);t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)};list.addView(t)
+   val t=TextView(this);t.text=(index+1).toString()+". "+p.name+"\n"+p.category+"\n"+p.address;t.textSize=16f;t.setPadding(8,10,8,10);t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)};t.setOnLongClickListener{showPlaceEditor(p);true};list.addView(t)
   }
   status.text=line.name+" · "+routePlaces.size+" объектов"
  }
@@ -588,7 +613,7 @@ class MainActivity:Activity(){
  private fun renderPlaces(query:String){
   val q=query.trim().lowercase();val filtered=currentPlaces.filter{(selectedCategory=="Все"||it.category==selectedCategory)&&(q.isEmpty()||it.name.lowercase().contains(q)||it.category.lowercase().contains(q)||it.address.lowercase().contains(q))}
   list.removeAllViews()
-  filtered.forEachIndexed{i,z->{val t=TextView(this);t.text="${i+1}. ${z.name}\n${z.category}\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12);t.setOnClickListener{showMap();showPlace(z);moveCamera(z.lat,z.lon,16f)};list.addView(t)}}
+  filtered.forEachIndexed{i,z->{val t=TextView(this);t.text="${i+1}. ${z.name}\n${z.category}\n${z.address}";t.textSize=16f;t.setPadding(8,12,8,12);t.setOnClickListener{showMap();showPlace(z);moveCamera(z.lat,z.lon,16f)};t.setOnLongClickListener{showPlaceEditor(z);true};list.addView(t)}}
   status.text=filtered.size.toString()+" объектов · "+if(q.isEmpty())"каталог" else "поиск"
  }
 
