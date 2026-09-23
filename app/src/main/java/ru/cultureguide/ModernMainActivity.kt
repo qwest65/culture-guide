@@ -1010,33 +1010,10 @@ private fun buildRouteStops(
     activeIndex: Int
 ): List<RouteStop> =
     places.mapIndexed { index, place ->
-        val previous = places.getOrNull(index - 1)
-        val meters = if (previous == null) {
-            0f
-        } else {
-            val result = FloatArray(1)
-            Location.distanceBetween(
-                previous.lat,
-                previous.lon,
-                place.lat,
-                place.lon,
-                result
-            )
-            result[0]
-        }
-
         RouteStop(
             place = place,
-            distance = if (previous == null) {
-                "0 м"
-            } else {
-                meters.roundToInt().toString() + " м"
-            },
-            time = if (previous == null) {
-                "—"
-            } else {
-                "~" + maxOf(1, (meters / 75f).roundToInt()) + " мин"
-            },
+            distance = if (index == 0) "Старт" else "—",
+            time = if (index == 0) "—" else "—",
             status = when {
                 index < activeIndex -> StopStatus.DONE
                 index == activeIndex -> StopStatus.CURRENT
@@ -1044,4 +1021,3 @@ private fun buildRouteStops(
             }
         )
     }
-
