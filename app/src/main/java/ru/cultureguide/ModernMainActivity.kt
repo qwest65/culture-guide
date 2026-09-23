@@ -87,66 +87,103 @@ class ModernMainActivity : Activity() {
         requestLocation()
     }
 
-    private fun buildModernUi() {
-        val root = FrameLayout(this)
-        root.setBackgroundColor(Color.WHITE)
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private fun rounded(fill: Int, stroke: Int, radiusDp: Int, strokeWidthDp: Int): android.graphics.drawable.GradientDrawable =
+        android.graphics.drawable.GradientDrawable().apply {
+            setColor(fill)
+            cornerRadius = dp(radiusDp).toFloat()
+            if (strokeWidthDp > 0) setStroke(dp(strokeWidthDp), stroke)
+        }
+
+    private fun makeIconButton(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 19f
+        gravity = Gravity.CENTER
+        setTextColor(Color.rgb(40, 44, 52))
+        background = rounded(Color.WHITE, Color.rgb(220, 223, 229), 14, 1)
+        elevation = dp(3).toFloat()
+    }
+
+    private fun makeModeButton(text: String): TextView = TextView(this).apply {
+        this.text = text
+        textSize = 13f
+        gravity = Gravity.CENTER
+        setTextColor(Color.rgb(55, 59, 68))
+        background = rounded(Color.rgb(246, 247, 249), Color.TRANSPARENT, 13, 0)
+    }
+
+    private fun buildModernUi() {
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.WHITE) }
         mapView = MapView(this)
         root.addView(mapView, FrameLayout.LayoutParams(-1, -1))
 
-        val top = LinearLayout(this).apply {
+        val topCard = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(16, 18, 16, 0)
+            setPadding(dp(16), dp(12), dp(16), dp(12))
+            background = rounded(Color.WHITE, Color.TRANSPARENT, 20, 0)
+            elevation = dp(8).toFloat()
         }
-        root.addView(top, FrameLayout.LayoutParams(-1, FrameLayout.LayoutParams.WRAP_CONTENT).apply {
-            gravity = Gravity.TOP
+        root.addView(topCard, FrameLayout.LayoutParams(-1, dp(142)).apply {
+            leftMargin = dp(12)
+            rightMargin = dp(12)
+            topMargin = dp(30)
         })
 
         val titleRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         val title = TextView(this).apply {
             text = "Культурный маршрут"
-            textSize = 23f
+            textSize = 20f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(25, 28, 34))
+            setTextColor(Color.rgb(28, 31, 38))
         }
-        titleRow.addView(title, LinearLayout.LayoutParams(0, 52, 1f))
-        val menu = makeRoundButton("⋯", 48)
+        titleRow.addView(title, LinearLayout.LayoutParams(0, dp(34), 1f))
+        val menu = makeIconButton("⋯")
         menu.setOnClickListener { showCatalogMenu() }
-        titleRow.addView(menu, LinearLayout.LayoutParams(48, 48))
-        top.addView(titleRow)
+        titleRow.addView(menu, LinearLayout.LayoutParams(dp(44), dp(44)))
+        topCard.addView(titleRow)
 
-        cityButton = makePillButton("Выбор города")
-        cityButton.setOnClickListener { chooseCity() }
-        top.addView(cityButton, LinearLayout.LayoutParams(-1, 52).apply { topMargin = 6 })
+        cityButton = TextView(this).apply {
+            text = "Выбор города"
+            textSize = 15f
+            gravity = Gravity.CENTER_VERTICAL
+            setTextColor(Color.rgb(45, 49, 57))
+            setPadding(dp(14), 0, dp(14), 0)
+            background = rounded(Color.rgb(247, 248, 250), Color.TRANSPARENT, 14, 0)
+            setOnClickListener { chooseCity() }
+        }
+        topCard.addView(cityButton, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(4) })
 
         val searchRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         searchBox = EditText(this).apply {
             hint = "Найти место или памятник"
-            textSize = 16f
+            textSize = 15f
             setSingleLine(true)
-            setPadding(18, 0, 18, 0)
-            background = rounded(Color.WHITE, Color.rgb(225, 228, 234), 24f, 1)
+            setTextColor(Color.rgb(35, 38, 45))
+            setHintTextColor(Color.rgb(125, 130, 139))
+            setPadding(dp(14), 0, dp(14), 0)
+            background = rounded(Color.WHITE, Color.rgb(220, 223, 229), 16, 1)
         }
-        searchRow.addView(searchBox, LinearLayout.LayoutParams(0, 52, 1f))
-        val filter = makeRoundButton("☰", 52)
+        searchRow.addView(searchBox, LinearLayout.LayoutParams(0, dp(42), 1f))
+        val filter = makeIconButton("☰")
         filter.setOnClickListener { chooseCategory() }
-        searchRow.addView(filter, LinearLayout.LayoutParams(52, 52).apply { leftMargin = 8 })
-        top.addView(searchRow, LinearLayout.LayoutParams(-1, 52).apply { topMargin = 8 })
+        searchRow.addView(filter, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(8) })
+        topCard.addView(searchRow, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
 
         searchBox.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 renderMap()
                 renderSheet()
             }
-            override fun afterTextChanged(s: android.text.Editable?) {}
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
         })
 
-        val locate = makeRoundButton("⌖", 54)
-        root.addView(locate, FrameLayout.LayoutParams(54, 54).apply {
+        val locate = makeIconButton("⌖")
+        root.addView(locate, FrameLayout.LayoutParams(dp(48), dp(48)).apply {
             gravity = Gravity.TOP or Gravity.END
-            topMargin = 154
-            rightMargin = 16
+            topMargin = dp(188)
+            rightMargin = dp(18)
         })
         locate.setOnClickListener {
             requestLocation()
@@ -155,98 +192,76 @@ class ModernMainActivity : Activity() {
 
         sheet = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(18, 10, 18, 18)
-            background = rounded(Color.WHITE, Color.TRANSPARENT, 24f, 0)
-            elevation = 18f
+            setPadding(dp(18), dp(9), dp(18), dp(12))
+            background = rounded(Color.WHITE, Color.TRANSPARENT, 26, 0)
+            elevation = dp(16).toFloat()
         }
-        root.addView(sheet, FrameLayout.LayoutParams(-1, 350).apply { gravity = Gravity.BOTTOM })
+        root.addView(sheet, FrameLayout.LayoutParams(-1, dp(326)).apply { gravity = Gravity.BOTTOM })
 
-        val handle = View(this).apply { setBackgroundColor(Color.rgb(190, 194, 200)) }
-        sheet.addView(handle, LinearLayout.LayoutParams(42, 5).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        val handle = View(this).apply { setBackgroundColor(Color.rgb(195, 198, 204)) }
+        sheet.addView(handle, LinearLayout.LayoutParams(dp(42), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL })
 
         sheetTitle = TextView(this).apply {
-            textSize = 20f
+            textSize = 19f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(28, 31, 37))
-            setPadding(0, 12, 0, 0)
+            setTextColor(Color.rgb(28, 31, 38))
         }
-        sheet.addView(sheetTitle, LinearLayout.LayoutParams(-1, 42))
+        sheet.addView(sheetTitle, LinearLayout.LayoutParams(-1, dp(32)).apply { topMargin = dp(8) })
 
         sheetSubtitle = TextView(this).apply {
-            textSize = 14f
-            setTextColor(Color.rgb(100, 105, 114))
+            textSize = 13f
+            setTextColor(Color.rgb(105, 110, 120))
         }
-        sheet.addView(sheetSubtitle, LinearLayout.LayoutParams(-1, 36))
+        sheet.addView(sheetSubtitle, LinearLayout.LayoutParams(-1, dp(24)))
 
-        routeButton = Button(this).apply {
+        routeButton = TextView(this).apply {
             text = "Выбрать культурный маршрут"
             textSize = 16f
-            setAllCaps(false)
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
-            background = rounded(Color.rgb(49, 94, 251), Color.TRANSPARENT, 18f, 0)
+            gravity = Gravity.CENTER
+            background = rounded(Color.rgb(49, 94, 251), Color.TRANSPARENT, 16, 0)
+            elevation = dp(3).toFloat()
+            setOnClickListener {
+                if (selectedRoute == null) showRouteChooser() else buildWalkingRoute()
+            }
         }
-        sheet.addView(routeButton, LinearLayout.LayoutParams(-1, 56))
-        routeButton.setOnClickListener {
-            if (selectedRoute == null) showRouteChooser() else buildWalkingRoute()
-        }
+        sheet.addView(routeButton, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(6) })
 
         val modes = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        val mapBtn = makeSheetButton("Карта")
-        val schemeBtn = makeSheetButton("Схема")
-        val linesBtn = makeSheetButton("Маршруты")
-        modes.addView(mapBtn, LinearLayout.LayoutParams(0, 46, 1f))
-        modes.addView(schemeBtn, LinearLayout.LayoutParams(0, 46, 1f))
-        modes.addView(linesBtn, LinearLayout.LayoutParams(0, 46, 1f))
-        sheet.addView(modes, LinearLayout.LayoutParams(-1, 52))
+        val mapBtn = makeModeButton("Карта")
+        val schemeBtn = makeModeButton("Схема")
+        val routesBtn = makeModeButton("Маршруты")
+        modes.addView(mapBtn, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(4) })
+        modes.addView(schemeBtn, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(4) })
+        modes.addView(routesBtn, LinearLayout.LayoutParams(0, dp(38), 1f))
+        sheet.addView(modes, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
         mapBtn.setOnClickListener { showMapMode() }
         schemeBtn.setOnClickListener { showSchemeMode() }
-        linesBtn.setOnClickListener { showRouteChooser() }
+        routesBtn.setOnClickListener { showRouteChooser() }
 
         statusText = TextView(this).apply {
             textSize = 12f
             setTextColor(Color.rgb(120, 124, 132))
             gravity = Gravity.CENTER_VERTICAL
         }
-        sheet.addView(statusText, LinearLayout.LayoutParams(-1, 24))
+        sheet.addView(statusText, LinearLayout.LayoutParams(-1, dp(20)))
 
         setContentView(root)
-    }
-
-    private fun makePillButton(text: String): TextView = TextView(this).apply {
-        this.text = text
-        textSize = 16f
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(18, 0, 18, 0)
-        setTextColor(Color.rgb(35, 38, 45))
-        background = rounded(Color.WHITE, Color.rgb(225, 228, 234), 22f, 1)
-        elevation = 5f
-    }
-
-    private fun makeRoundButton(text: String, size: Int): TextView = TextView(this).apply {
-        this.text = text
-        textSize = 22f
-        gravity = Gravity.CENTER
-        setTextColor(Color.rgb(35, 38, 45))
-        background = rounded(Color.WHITE, Color.rgb(225, 228, 234), 26f, 1)
-        elevation = 7f
-    }
-
-    private fun makeSheetButton(text: String): Button = Button(this).apply {
-        this.text = text
-        textSize = 13f
-        setAllCaps(false)
-        setTextColor(Color.rgb(55, 60, 68))
-        background = rounded(Color.rgb(246, 247, 249), Color.TRANSPARENT, 16f, 0)
-    }
-
-    private fun rounded(fill: Int, stroke: Int, radius: Float, strokeWidth: Int): android.graphics.drawable.GradientDrawable =
-        android.graphics.drawable.GradientDrawable().apply {
-            setColor(fill)
-            cornerRadius = radius
-            if (strokeWidth > 0) setStroke(strokeWidth, stroke)
+        root.setOnApplyWindowInsetsListener { _, insets ->
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
+                val topLp = topCard.layoutParams as FrameLayout.LayoutParams
+                topLp.topMargin = bars.top + dp(8)
+                topCard.layoutParams = topLp
+                val sheetLp = sheet.layoutParams as FrameLayout.LayoutParams
+                sheetLp.bottomMargin = bars.bottom
+                sheet.layoutParams = sheetLp
+            }
+            insets
         }
-
+        root.requestApplyInsets()
+    }
     private fun loadCatalog() {
         cities = db.cities()
         if (cities.isEmpty()) return
