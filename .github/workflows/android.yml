@@ -50,16 +50,18 @@ jobs:
           echo "APK version: $VERSION_NAME ($VERSION_CODE), commit ${GITHUB_SHA::7}"
 
       - name: Prepare APK
+        env:
+          VERSION: ${{ steps.version.outputs.name }}
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/CultureGuide.apk
-          (cd dist && sha256sum CultureGuide.apk > SHA256SUMS.txt)
+          cp app/build/outputs/apk/debug/app-debug.apk "dist/CultureGuide-v${VERSION}.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
           ls -lh dist
 
       - uses: actions/upload-artifact@v4
         with:
           name: CultureGuide-v${{ steps.version.outputs.name }}-${{ steps.version.outputs.sha }}
-          path: dist/CultureGuide.apk
+          path: dist/CultureGuide-v*.apk
           if-no-files-found: error
 
       - name: Write release notes
@@ -76,7 +78,7 @@ jobs:
 
           ### Как установить на телефон
 
-          1. Скачайте **CultureGuide.apk** (версия ${VERSION}) из списка файлов ниже (Assets).
+          1. Скачайте **CultureGuide-v${VERSION}.apk** из списка файлов ниже (Assets).
           2. Откройте файл на телефоне и разрешите установку из этого источника, если Android попросит.
           3. При первом запуске разрешите доступ к геолокации — он нужен для режима ведения.
 
@@ -100,7 +102,7 @@ jobs:
             gh release delete "$TAG" --yes --cleanup-tag
           fi
           gh release create "$TAG" \
-            dist/CultureGuide.apk dist/SHA256SUMS.txt \
+            "dist/CultureGuide-v${VERSION}.apk" dist/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --title "Культурный гид ${VERSION}" \
             --notes-file notes.md \
@@ -114,7 +116,7 @@ jobs:
         run: |
           gh release delete preview --yes --cleanup-tag 2>/dev/null || true
           gh release create preview \
-            dist/CultureGuide.apk dist/SHA256SUMS.txt \
+            "dist/CultureGuide-v${VERSION}.apk" dist/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --title "Предварительная сборка ${VERSION} (${GITHUB_REF_NAME})" \
             --notes-file notes.md \
