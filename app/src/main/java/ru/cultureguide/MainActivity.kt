@@ -560,19 +560,18 @@ class MainActivity:Activity(){
   val source=EditText(this);source.hint="Источник (URL)";source.setText(place.sourceUrl)
   val image=EditText(this);image.hint="Изображение (URL)";image.setText(place.imageUrl)
   listOf(name,cat,desc,address,lat,lon,source,image).forEach{box.addView(it)}
-  AlertDialog.Builder(this).setTitle("Редактировать объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Сохранить"){_,_->
-   try{
-    db.updatePlace(place.id,name.text.toString().trim(),cat.text.toString().trim(),desc.text.toString().trim(),address.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble(),source.text.toString().trim(),image.text.toString().trim())
-    refresh()
-    Toast.makeText(this,"Объект сохранён",Toast.LENGTH_SHORT).show()
-   }catch(e:Exception){Toast.makeText(this,"Не удалось сохранить объект: "+(e.message?:"проверьте данные"),Toast.LENGTH_LONG).show()}
-  }
-  val dialog=builder.create()
+  val dialog=AlertDialog.Builder(this).setTitle("Редактировать объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Сохранить",null).create()
   dialog.setOnShowListener{
    dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
     try{
      val n=name.text.toString().trim();val category=cat.text.toString().trim();val d=desc.text.toString().trim();val a=address.text.toString().trim();val la=lat.text.toString().trim().toDouble();val lo=lon.text.toString().trim().toDouble()
      require(n.isNotBlank()&&category.isNotBlank()&&d.isNotBlank()&&a.isNotBlank()&&la.isFinite()&&lo.isFinite()&&la in -90.0..90.0&&lo in -180.0..180.0)
+     db.updatePlace(place.id,n,category,d,a,la,lo,source.text.toString().trim(),image.text.toString().trim());refresh();dialog.dismiss();Toast.makeText(this,"Объект сохранён",Toast.LENGTH_SHORT).show()
+    }catch(_:Exception){Toast.makeText(this,"Проверьте обязательные поля и координаты",Toast.LENGTH_LONG).show()}
+   }
+  }
+  dialog.show()
+ })
      db.updatePlace(place.id,n,category,d,a,la,lo,source.text.toString().trim(),image.text.toString().trim());refresh();dialog.dismiss();Toast.makeText(this,"Объект сохранён",Toast.LENGTH_SHORT).show()
     }catch(_:Exception){Toast.makeText(this,"Проверьте обязательные поля и координаты",Toast.LENGTH_LONG).show()}
    }
