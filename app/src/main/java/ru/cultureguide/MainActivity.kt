@@ -804,7 +804,25 @@ class MainActivity:Activity(){
   routeSessions+=session
  }
  private fun polylineDistanceMeters(polyline:com.yandex.mapkit.geometry.Polyline):Double{ val p=polyline.points; var m=0.0; for(i in 1 until p.size){ val r=FloatArray(1); Location.distanceBetween(p[i-1].latitude,p[i-1].longitude,p[i].latitude,p[i].longitude,r); m+=r[0].toDouble() }; return m }
- private fun updateRouteProgress(location:Location){ if(routePlaces.isEmpty()||routeProgressIndex>=routePlaces.size)return; val next=routePlaces[routeProgressIndex]; val r=FloatArray(1); Location.distanceBetween(location.latitude,location.longitude,next.lat,next.lon,r); val meters=r[0].toDouble(); if(meters<=50.0){ visitedRoutePlaceIds.add(next.id); routeProgressIndex++; if(routeProgressIndex>=routePlaces.size){ status.text="Маршрут завершён · посещено "+visitedRoutePlaceIds.size+" объектов · "+String.format(java.util.Locale.US,"%.2f км",routeDistanceMeters/1000.0); return } }; val target=routePlaces[routeProgressIndex]; val d=FloatArray(1); Location.distanceBetween(location.latitude,location.longitude,target.lat,target.lon,d); val distanceText=if(d[0]<1000f)"%.0f м".format(java.util.Locale.US,d[0]) else "%.2f км".format(java.util.Locale.US,d[0]/1000.0); status.text="Остановка "+(routeProgressIndex+1)+"/"+routePlaces.size+": "+target.name+" · "+distanceText+" · пройдено "+visitedRoutePlaceIds.size
+ private fun updateRouteProgress(location:Location){
+  if(routePlaces.isEmpty()||routeProgressIndex>=routePlaces.size)return
+  val next=routePlaces[routeProgressIndex]
+  val r=FloatArray(1)
+  Location.distanceBetween(location.latitude,location.longitude,next.lat,next.lon,r)
+  if(r[0]<=50f){
+   visitedRoutePlaceIds.add(next.id)
+   routeProgressIndex++
+   if(routeProgressIndex>=routePlaces.size){
+    status.text="Маршрут завершён · посещено "+visitedRoutePlaceIds.size+" объектов · "+String.format(java.util.Locale.US,"%.2f км",routeDistanceMeters/1000.0)
+    return
+   }
+  }
+  val target=routePlaces[routeProgressIndex]
+  val d=FloatArray(1)
+  Location.distanceBetween(location.latitude,location.longitude,target.lat,target.lon,d)
+  val distanceText=if(d[0]<1000f)"%.0f м".format(java.util.Locale.US,d[0]) else "%.2f км".format(java.util.Locale.US,d[0]/1000.0)
+  status.text="Остановка "+(routeProgressIndex+1)+"/"+routePlaces.size+": "+target.name+" · "+distanceText+" · пройдено "+visitedRoutePlaceIds.size
+ }
  private fun showPlace(p:Place){
   val lines=db.routesForPlace(cityId,p.id)
   val lineText=if(lines.isEmpty())"Линии: —" else "Линии: "+lines.joinToString(", "){it.name}
