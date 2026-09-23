@@ -654,7 +654,10 @@ class MainActivity:Activity(){
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=emptyList();schemeView.invalidate()
   if(schemeMode)showScheme() else {showMap();drawRoutesOnMap(line.id)};list.removeAllViews()
   val head=TextView(this);head.text=line.name+"\n"+line.description+"\n"+routePlaces.size+" остановок · ≈ "+formatDistance(routePlaces)+" км по прямой между остановками";head.textSize=18f;head.setPadding(8,10,8,6);list.addView(head)
-  val start=Button(this);start.text="Начать маршрут";start.setAllCaps(false);start.setOnClickListener{buildRoute()};list.addView(start,LinearLayout.LayoutParams(-1,52))
+  val actions=LinearLayout(this);actions.orientation=LinearLayout.HORIZONTAL
+  val start=Button(this);start.text="Начать маршрут";start.setAllCaps(false);start.setOnClickListener{buildRoute()};actions.addView(start,LinearLayout.LayoutParams(0,52,1f))
+  val reset=Button(this);reset.text="Сбросить";reset.setAllCaps(false);reset.setOnClickListener{routeProgressIndex=0;visitedRoutePlaceIds.clear();status.text="Прогресс маршрута сброшен"};actions.addView(reset,LinearLayout.LayoutParams(0,52,1f))
+  list.addView(actions)
   routePlaces.forEachIndexed{index,p->
    val t=TextView(this);t.text=(index+1).toString()+". "+p.name+"\n"+p.category+"\n"+p.address;t.textSize=16f;t.setPadding(8,10,8,10);t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)};t.setOnLongClickListener{showPlaceEditor(p);true};list.addView(t)
   }
