@@ -108,45 +108,27 @@ class ModernMainActivity : ComponentActivity() {
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             lastLocation = location
-            userLocation = location
-
-            val activePlace = routePlaces.getOrNull(activeStopIndex)
-            if (routeBuilt && activePlace != null) {
-                val distanceToStop = FloatArray(1)
-                Location.distanceBetween(
-                    location.latitude,
-                    location.longitude,
-                    activePlace.lat,
-                    activePlace.lon,
-                    distanceToStop
-                )
-
-                if (distanceToStop[0] <= 50f) {
-                    statusText = "Вы достигли: " + activePlace.name
-                    if (activeStopIndex < routePlaces.lastIndex) {
-                        activeStopIndex += 1
-                    }
-                }
-
-                mapView?.let { view ->
-                    val map = view.mapWindow.map
-                    val current = map.cameraPosition
-                    map.move(
-                        CameraPosition(
-                            Point(location.latitude, location.longitude),
-                            maxOf(current.zoom, 16f),
-                            current.azimuth,
-                            current.tilt
-                        ),
-                        Animation(Animation.Type.SMOOTH, 0.6f)
-                    )
-                }
-            }
-
             mapView?.let { showUserLocation(it, location.latitude, location.longitude) }
+            
+            if (routePlaces.isNotEmpty() && activeStopIndex < routePlaces.size) {
+                val target = routePlaces[activeStopIndex]
+                val results = FloatArray(1)
+                Location.distanceBetween(location.latitude, location.longitude, target.lat, target.lon, results)
+                if (results[0] < 40f) { 
+                    if (activeStopIndex < routePlaces.lastIndex) {
+                        activeStopIndex++
+                        statusText = "Достигнуто: ${target.name}. Следующая: ${routePlaces[activeStopIndex].name}"
+                    } else {
+                        statusText = "Маршрут завершен!"
+                    }
+                } else {
+                    statusText = "До точки ${target.name} осталось ${results[0].toInt()} м"
+                }
+            } else {
+                statusText = "Ваше положение обновлено"
+            }
         }
     }
-
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -342,12 +324,12 @@ class ModernMainActivity : ComponentActivity() {
     }
 
     private fun buildWalkingRoute() {
-        routeDistanceMeters = 0.0
         if (routePlaces.size < 2) {
             statusText = "Выберите минимум две точки посещения"
             return
         }
         clearBuiltRoute(clearStops = false)
+        routeDistanceMeters = 0.0
         val generation = routeBuildGeneration
         val requestPoints = routePlaces.map {
             RequestPoint(Point(it.lat, it.lon), RequestPointType.WAYPOINT, null, null, null)
@@ -384,8 +366,7 @@ class ModernMainActivity : ComponentActivity() {
                         zIndex = 6f
                     }
                     routePolylines += line
-                    val legDistanceMeters = result[0].metadata.weight.walkingDistance.value
-                    routeDistanceMeters += legDistanceMeters
+                    routeDistanceMeters += result[0].metadata.weight.walkingDistance.value
                     statusText = "Строю пешеходный маршрут… ${index + 1}/${requestPoints.size - 1} · %.2f км".format(
                         Locale.US, routeDistanceMeters / 1000.0
                     )
@@ -454,9 +435,7 @@ class ModernMainActivity : ComponentActivity() {
         clearBuiltRoute(clearStops = false)
         routePlaces = currentPlaces
         activeStopIndex = 0
-        if (currentPlaces.size >= 2) {
-            buildWalkingRoute()
-        }
+        if (routePlaces.size >= 2) buildWalkingRoute()
     }
 
     internal fun moveStop(fromIndex: Int, toIndex: Int) {
@@ -639,7 +618,7 @@ private fun RouteScreen(
                             ) {
                                 Icon(Icons.Default.LocationOn, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("Карта", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Маршруты", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(3.dp))
                                 Text("▾", fontSize = 13.sp, color = Color(0xFF6D7380))
                             }
