@@ -571,11 +571,6 @@ class MainActivity:Activity(){
    }
   }
   dialog.show()
- })
-     db.updatePlace(place.id,n,category,d,a,la,lo,source.text.toString().trim(),image.text.toString().trim());refresh();dialog.dismiss();Toast.makeText(this,"Объект сохранён",Toast.LENGTH_SHORT).show()
-    }catch(_:Exception){Toast.makeText(this,"Проверьте обязательные поля и координаты",Toast.LENGTH_LONG).show()}
-   }
-  };dialog.show()
  }
 
  private fun showRouteEditor(route:RouteLine?){
