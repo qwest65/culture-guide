@@ -178,7 +178,10 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,4){
   root.put("cities",jc).put("places",jp).put("routes",jr).put("route_places",jrp);return root.toString(2)
  }
  fun importJson(text:String){
-  val root=JSONObject(text);require(root.optString("format")=="cultureguide"){"Неверный формат файла"}
+  val root=JSONObject(text)
+  require(root.optString("format")=="cultureguide"){"Неверный формат файла"}
+  require(root.optInt("version",-1)==1){"Неподдерживаемая версия каталога"}
+  require(root.has("cities")&&root.has("places")&&root.has("routes")&&root.has("route_places")){"Неполный каталог"}
   val db=writableDatabase;db.beginTransaction()
   try{
    db.execSQL("DELETE FROM route_places");db.execSQL("DELETE FROM routes");db.execSQL("DELETE FROM places");db.execSQL("DELETE FROM cities")
@@ -193,6 +196,7 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,4){
  fun mergeCatalogJson(text:String):Triple<Int,Int,Int>{
   val root=JSONObject(text)
   require(root.optString("format")=="cultureguide"){"Неверный формат каталога"}
+  require(root.optInt("version",-1)==1){"Неподдерживаемая версия каталога"}
   val db=writableDatabase
   db.beginTransaction()
   var addedCities=0;var addedPlaces=0;var addedRoutes=0
@@ -502,7 +506,16 @@ class MainActivity:Activity(){
  private fun showAddCity(){
   val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
   val name=EditText(this);name.hint="Город";val country=EditText(this);country.hint="Страна";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";listOf(name,country,lat,lon).forEach{box.addView(it)}
-  AlertDialog.Builder(this).setTitle("Добавить город").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addCity(name.text.toString().trim(),country.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble());loadCities();refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
+  val dialog=AlertDialog.Builder(this).setTitle("Добавить город").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить",null).create()
+  dialog.setOnShowListener{
+   dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+    try{
+     val n=name.text.toString().trim();val ctry=country.text.toString().trim();val la=lat.text.toString().trim().toDouble();val lo=lon.text.toString().trim().toDouble()
+     require(n.isNotBlank()&&ctry.isNotBlank()&&la.isFinite()&&lo.isFinite()&&la in -90.0..90.0&&lo in -180.0..180.0)
+     db.addCity(n,ctry,la,lo);loadCities();refresh();dialog.dismiss()
+    }catch(_:Exception){Toast.makeText(this,"Проверьте название, страну и координаты",Toast.LENGTH_LONG).show()}
+   }
+  };dialog.show()
  }
  private fun showEditCity(){
   val city=cities.firstOrNull{it.id==cityId}?:return
@@ -523,7 +536,17 @@ class MainActivity:Activity(){
     db.deleteCity(city.id);cityId=0L;loadCities();refresh()
    }.show()
   }
-  builder.show()
+  val dialog=builder.create()
+  dialog.setOnShowListener{
+   dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+    try{
+     val n=name.text.toString().trim();val ctry=country.text.toString().trim();val la=lat.text.toString().trim().toDouble();val lo=lon.text.toString().trim().toDouble()
+     require(n.isNotBlank()&&ctry.isNotBlank()&&la.isFinite()&&lo.isFinite()&&la in -90.0..90.0&&lo in -180.0..180.0)
+     db.updateCity(city.id,n,ctry,la,lo);loadCities();refresh();dialog.dismiss()
+    }catch(_:Exception){Toast.makeText(this,"Проверьте название, страну и координаты",Toast.LENGTH_LONG).show()}
+   }
+  }
+  dialog.show()
  }
 
  private fun showPlaceEditor(place:Place){
@@ -543,7 +566,17 @@ class MainActivity:Activity(){
     refresh()
     Toast.makeText(this,"Объект сохранён",Toast.LENGTH_SHORT).show()
    }catch(e:Exception){Toast.makeText(this,"Не удалось сохранить объект: "+(e.message?:"проверьте данные"),Toast.LENGTH_LONG).show()}
-  }.show()
+  }
+  val dialog=builder.create()
+  dialog.setOnShowListener{
+   dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+    try{
+     val n=name.text.toString().trim();val category=cat.text.toString().trim();val d=desc.text.toString().trim();val a=address.text.toString().trim();val la=lat.text.toString().trim().toDouble();val lo=lon.text.toString().trim().toDouble()
+     require(n.isNotBlank()&&category.isNotBlank()&&d.isNotBlank()&&a.isNotBlank()&&la.isFinite()&&lo.isFinite()&&la in -90.0..90.0&&lo in -180.0..180.0)
+     db.updatePlace(place.id,n,category,d,a,la,lo,source.text.toString().trim(),image.text.toString().trim());refresh();dialog.dismiss();Toast.makeText(this,"Объект сохранён",Toast.LENGTH_SHORT).show()
+    }catch(_:Exception){Toast.makeText(this,"Проверьте обязательные поля и координаты",Toast.LENGTH_LONG).show()}
+   }
+  };dialog.show()
  }
 
  private fun showRouteEditor(route:RouteLine?){
@@ -593,13 +626,35 @@ class MainActivity:Activity(){
   if(route!=null)builder.setNeutralButton("Удалить"){_,_->
    db.deleteRoute(route.id);refresh();showLines()
   }
-  builder.show()
+  val dialog=builder.create()
+  dialog.setOnShowListener{
+   dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+    try{
+     val title=name.text.toString().trim()
+     require(title.isNotBlank()){"Введите название линии"}
+     val desc=description.text.toString().trim()
+     val id=if(route==null)db.createRoute(cityId,title,desc) else {db.updateRoute(route.id,title,desc);route.id}
+     db.saveRoutePlaces(id,order.filter{checked[it]==true})
+     refresh();showLines();dialog.dismiss()
+    }catch(e:Exception){Toast.makeText(this,"Не удалось сохранить линию: "+(e.message?:"ошибка"),Toast.LENGTH_LONG).show()}
+   }
+  }
+  dialog.show()
  }
 
  private fun showAddPlace(){
   val box=LinearLayout(this);box.orientation=LinearLayout.VERTICAL;box.setPadding(24,8,24,0)
   val name=EditText(this);name.hint="Название";val cat=EditText(this);cat.hint="Категория";val desc=EditText(this);desc.hint="Описание";val address=EditText(this);address.hint="Адрес";val lat=EditText(this);lat.hint="Широта";val lon=EditText(this);lon.hint="Долгота";val source=EditText(this);source.hint="Источник (URL)";val image=EditText(this);image.hint="Изображение (URL)";listOf(name,cat,desc,address,lat,lon,source,image).forEach{box.addView(it)}
-  AlertDialog.Builder(this).setTitle("Добавить объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить"){_,_->try{db.addPlace(cityId,name.text.toString().trim(),cat.text.toString().trim(),desc.text.toString().trim(),address.text.toString().trim(),lat.text.toString().toDouble(),lon.text.toString().toDouble(),source.text.toString().trim(),image.text.toString().trim());refresh()}catch(_:Exception){Toast.makeText(this,"Проверьте данные",Toast.LENGTH_LONG).show()}}.show()
+  val dialog=AlertDialog.Builder(this).setTitle("Добавить объект").setView(box).setNegativeButton("Отмена",null).setPositiveButton("Добавить",null).create()
+  dialog.setOnShowListener{
+   dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener{
+    try{
+     val n=name.text.toString().trim();val category=cat.text.toString().trim();val d=desc.text.toString().trim();val a=address.text.toString().trim();val la=lat.text.toString().trim().toDouble();val lo=lon.text.toString().trim().toDouble()
+     require(n.isNotBlank()&&category.isNotBlank()&&d.isNotBlank()&&a.isNotBlank()&&la.isFinite()&&lo.isFinite()&&la in -90.0..90.0&&lo in -180.0..180.0)
+     db.addPlace(cityId,n,category,d,a,la,lo,source.text.toString().trim(),image.text.toString().trim());refresh();dialog.dismiss()
+    }catch(_:Exception){Toast.makeText(this,"Проверьте обязательные поля и координаты",Toast.LENGTH_LONG).show()}
+   }
+  };dialog.show()
  }
  private fun syncRemoteCatalog(){
   status.text="Обновляю каталог…"
