@@ -2,7 +2,7 @@ name: Android APK
 
 on:
   push:
-    branches: ["main", "claude/**"]
+    branches: ["dev", "claude/**"]
   workflow_dispatch:
 
 permissions:
@@ -87,7 +87,7 @@ jobs:
           NOTES
 
       - name: Publish release
-        if: github.ref == 'refs/heads/main'
+        if: github.ref == 'refs/heads/dev'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.name }}
@@ -107,7 +107,7 @@ jobs:
             --latest
 
       - name: Publish preview pre-release
-        if: github.ref != 'refs/heads/main'
+        if: github.ref != 'refs/heads/dev'
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.version.outputs.name }}
