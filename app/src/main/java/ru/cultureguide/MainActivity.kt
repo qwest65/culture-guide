@@ -343,6 +343,7 @@ class MainActivity:Activity(){
  private var lastLocation:Location?=null
  private var routePolyline:MapObject?=null
  private val routePolylines=mutableListOf<MapObject>()
+ private var routeDistanceMeters=0.0
  private var userPlacemark:PlacemarkMapObject?=null
  private val pinProvider by lazy{ImageProvider.fromResource(this,R.drawable.ic_map_pin)}
  private val userPinProvider by lazy{ImageProvider.fromResource(this,R.drawable.ic_user_pin)}
@@ -353,6 +354,7 @@ class MainActivity:Activity(){
   override fun onLocationChanged(location:Location){
    lastLocation=location
    showUserLocation(location.latitude,location.longitude,false)
+   if(routePolylines.isNotEmpty())updateRouteProgress(location)
    status.text="GPS: %.5f, %.5f".format(java.util.Locale.US,location.latitude,location.longitude)
   }
  }
@@ -754,6 +756,7 @@ class MainActivity:Activity(){
   routeSessions.forEach{it.cancel()};routeSessions.clear()
   routePolylines.forEach{mapView.mapWindow.map.mapObjects.remove(it)};routePolylines.clear()
   routePolyline=null
+  routeDistanceMeters=0.0
   lastLocation?.let{showUserLocation(it.latitude,it.longitude,false)}
   showMap()
   val startPoint=lastLocation?.let{Point(it.latitude,it.longitude)}
