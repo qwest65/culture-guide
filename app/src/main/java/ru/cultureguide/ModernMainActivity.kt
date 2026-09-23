@@ -89,7 +89,7 @@ class ModernMainActivity : ComponentActivity() {
     private var routeDistanceMeters = 0.0
 
     private val placeTapListener = MapObjectTapListener { obj, _ ->
-        selectedPlace.value = obj.userData as? Place
+        selectedPlace = obj.userData as? Place
         true
     }
 
@@ -709,13 +709,13 @@ private fun RouteScreen(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        activity.selectedPlace.value = null
+                        activity.selectedPlace = null
                         activity.moveCamera(place.lat, place.lon, 16.5f)
                     }
                 ) { Text("Показать на карте") }
             },
             dismissButton = {
-                TextButton(onClick = { activity.selectedPlace.value = null }) {
+                TextButton(onClick = { activity.selectedPlace = null }) {
                     Text("Закрыть")
                 }
             }
