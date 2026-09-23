@@ -781,13 +781,9 @@ class MainActivity:Activity(){
   val source=if(routePlaces.isNotEmpty())routePlaces else currentPlaces
   if(source.size<2){Toast.makeText(this,"Для маршрута нужно минимум 2 объекта",Toast.LENGTH_LONG).show();return}
   val ordered=if(selectedRoute!=null){
-   val nearestIndex=lastLocation?.let{location->
-    source.indices.minByOrNull{index->
-     val place=source[index];val result=FloatArray(1)
-     Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]
-    }
-   }?:0
-   source.drop(nearestIndex)+source.take(nearestIndex)
+   // A thematic line has an explicit station order. Keep it intact;
+   // the user's current location is only the physical route origin.
+   source
   }else{
    val start=lastLocation?.let{location->
     source.minByOrNull{place->val result=FloatArray(1);Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,result);result[0]}
