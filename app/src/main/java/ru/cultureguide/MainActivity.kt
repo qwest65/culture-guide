@@ -260,6 +260,8 @@ class MetroView(c:Context):View(c){
  var route:List<Place> = emptyList()
  var lines:List<RouteLine> = emptyList()
  var selectedLineId:Long?=null
+ var visitedPlaceIds:Set<Long> = emptySet()
+ var nextPlaceId:Long?=null
  private val p=Paint(Paint.ANTI_ALIAS_FLAG)
  private val colors=intArrayOf(Color.rgb(49,94,251),Color.rgb(235,87,87),Color.rgb(39,174,96),Color.rgb(155,89,182),Color.rgb(242,153,74))
  private fun shortName(name:String):String{
@@ -301,9 +303,14 @@ class MetroView(c:Context):View(c){
    val transfer=lines.count{it.placeIds.contains(id)}>1
    val radius=if(transfer)15f else 11f
    p.style=Paint.Style.FILL;p.color=Color.WHITE;c.drawCircle(q.x,q.y,radius+4f,p)
-   p.color=Color.DKGRAY;c.drawCircle(q.x,q.y,radius,p)
+   val visited=place.id in visitedPlaceIds
+   val next=place.id==nextPlaceId
+   p.color=if(visited) Color.rgb(39,174,96) else Color.DKGRAY;c.drawCircle(q.x,q.y,radius,p)
    if(transfer){p.color=Color.WHITE;c.drawCircle(q.x,q.y,radius-5f,p)}
-   p.color=Color.DKGRAY;p.textAlign=Paint.Align.CENTER;p.textSize=12f;p.typeface=android.graphics.Typeface.DEFAULT_BOLD
+   if(next){
+    p.style=Paint.Style.STROKE;p.strokeWidth=4f;p.color=Color.rgb(49,94,251);c.drawCircle(q.x,q.y,radius+7f,p)
+   }
+   p.style=Paint.Style.FILL;p.color=if(visited) Color.rgb(39,174,96) else Color.DKGRAY;p.textAlign=Paint.Align.CENTER;p.textSize=12f;p.typeface=android.graphics.Typeface.DEFAULT_BOLD
    c.drawText(shortName(place.name),q.x,q.y+radius+17f,p)
   }
   // Legend.
@@ -659,18 +666,41 @@ class MainActivity:Activity(){
   status.text=routeLines.size.toString()+" тематических линий · долгий тап — редактирование"
  }
 
+ private fun renderRouteProgressUi(){
+  schemeView.visitedPlaceIds=visitedRoutePlaceIds.toSet()
+  schemeView.nextPlaceId=routePlaces.getOrNull(routeProgressIndex)?.id
+  schemeView.invalidate()
+  if(selectedRoute==null)return
+  val selected=selectedRoute!!
+  list.removeAllViews()
+  val head=TextView(this)
+  head.text=selected.name+"\n"+selected.description+"\n"+routePlaces.size+" остановок · расстояние по прямой: ≈ "+formatDistance(routePlaces)+" км"
+  head.textSize=18f;head.setPadding(8,10,8,6);list.addView(head)
+  val actions=LinearLayout(this);actions.orientation=LinearLayout.HORIZONTAL
+  val start=Button(this);start.text="Начать маршрут";start.setAllCaps(false);start.setOnClickListener{buildRoute()};actions.addView(start,LinearLayout.LayoutParams(0,52,1f))
+  val reset=Button(this);reset.text="Сбросить";reset.setAllCaps(false);reset.setOnClickListener{
+   routeProgressIndex=0;visitedRoutePlaceIds.clear();renderRouteProgressUi()
+   status.text="Прогресс маршрута сброшен"
+   if(routePolylines.isNotEmpty())status.text+=" · маршрут построен: %.2f км".format(java.util.Locale.US,routeDistanceMeters/1000.0)
+  };actions.addView(reset,LinearLayout.LayoutParams(0,52,1f));list.addView(actions)
+  routePlaces.forEachIndexed{index,p->
+   val done=p.id in visitedRoutePlaceIds
+   val current=p.id==routePlaces.getOrNull(routeProgressIndex)?.id
+   val marker=when{done->"✓";current->"→";else->"○"}
+   val t=TextView(this);t.text=marker+" "+(index+1)+". "+p.name+"\n"+p.category+" · "+p.address
+   t.textSize=16f;t.setPadding(8,10,8,10)
+   t.setTypeface(null,if(done)android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL)
+   t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)}
+   t.setOnLongClickListener{showPlaceEditor(p);true};list.addView(t)
+  }
+ }
+
  private fun selectRoute(line:RouteLine){
   selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=emptyList();schemeView.invalidate()
   if(schemeMode)showScheme() else {showMap();drawRoutesOnMap(line.id)};list.removeAllViews()
   val head=TextView(this);head.text=line.name+"\n"+line.description+"\n"+routePlaces.size+" остановок · расстояние по прямой: ≈ "+formatDistance(routePlaces)+" км";head.textSize=18f;head.setPadding(8,10,8,6);list.addView(head)
-  val actions=LinearLayout(this);actions.orientation=LinearLayout.HORIZONTAL
-  val start=Button(this);start.text="Начать маршрут";start.setAllCaps(false);start.setOnClickListener{buildRoute()};actions.addView(start,LinearLayout.LayoutParams(0,52,1f))
-  val reset=Button(this);reset.text="Сбросить";reset.setAllCaps(false);reset.setOnClickListener{routeProgressIndex=0;visitedRoutePlaceIds.clear();status.text="Прогресс маршрута сброшен"};actions.addView(reset,LinearLayout.LayoutParams(0,52,1f))
-  list.addView(actions)
-  routePlaces.forEachIndexed{index,p->
-   val t=TextView(this);t.text=(index+1).toString()+". "+p.name+"\n"+p.category+"\n"+p.address;t.textSize=16f;t.setPadding(8,10,8,10);t.setOnClickListener{showMap();showPlace(p);moveCamera(p.lat,p.lon,16f)};t.setOnLongClickListener{showPlaceEditor(p);true};list.addView(t)
-  }
+  renderRouteProgressUi()
   status.text=line.name+" · "+routePlaces.size+" объектов"
  }
 
@@ -774,6 +804,9 @@ class MainActivity:Activity(){
   routeDistanceMeters=0.0
   routeProgressIndex=0
   visitedRoutePlaceIds.clear()
+  schemeView.visitedPlaceIds=emptySet()
+  schemeView.nextPlaceId=ordered.firstOrNull()?.id
+  schemeView.invalidate()
   lastLocation?.let{showUserLocation(it.latitude,it.longitude,false)}
   showMap()
   val startPoint=lastLocation?.let{Point(it.latitude,it.longitude)}
@@ -825,7 +858,9 @@ class MainActivity:Activity(){
   if(r[0]<=50f){
    visitedRoutePlaceIds.add(next.id)
    routeProgressIndex++
+   renderRouteProgressUi()
    if(routeProgressIndex>=routePlaces.size){
+    renderRouteProgressUi()
     status.text="Маршрут завершён · посещено "+visitedRoutePlaceIds.size+" объектов · "+String.format(java.util.Locale.US,"%.2f км",routeDistanceMeters/1000.0)
     return
    }
