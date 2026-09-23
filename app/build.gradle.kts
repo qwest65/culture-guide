@@ -22,7 +22,7 @@ android {
         targetSdk = 35
         versionCode = 7
         versionName = "0.6.1"
-        buildConfigField("String", "MAPKIT_API_KEY", ""$mapkitApiKey"")
+        buildConfigField("String", "MAPKIT_API_KEY", "\"$mapkitApiKey\"")
     }
     buildFeatures {
         buildConfig = true
