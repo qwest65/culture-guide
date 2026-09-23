@@ -472,7 +472,10 @@ class MainActivity:Activity(){
        return@setItems
       }
       val sourceUrl="https://yandex.ru/maps/?ll="+point.longitude+"%2C"+point.latitude+"&z=16&text="+Uri.encode(name)
-      val id=db.addPlace(cityId,name,"Культура",obj.descriptionText?:"Найдено через Yandex Search",obj.descriptionText?.takeIf{it.isNotBlank()}.orEmpty(),point.latitude,point.longitude,sourceUrl)
+      val categoryHint=obj.descriptionText?.split(",","·","—")?.firstOrNull()?.trim().orEmpty()
+      val category=if(categoryHint.length in 3..40 && categoryHint.lowercase() !in setOf("адрес","город"))categoryHint else "Культура"
+      val description=obj.descriptionText?.takeIf{it.isNotBlank()}?:"Найдено через Yandex Search"
+      val id=db.addPlace(cityId,name,category,description,description,point.latitude,point.longitude,sourceUrl)
       refresh();showMap();currentPlaces.firstOrNull{it.id==id}?.let{showPlace(it)}
       moveCamera(point.latitude,point.longitude,16f)
      }catch(e:Exception){Toast.makeText(this@MainActivity,"Не удалось сохранить объект: "+e.message,Toast.LENGTH_LONG).show()}
