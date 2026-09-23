@@ -800,6 +800,7 @@ class MainActivity:Activity(){
   routeSessions+=session
  }
  private fun polylineDistanceMeters(polyline:com.yandex.mapkit.geometry.Polyline):Double{ val p=polyline.points; var m=0.0; for(i in 1 until p.size){ val r=FloatArray(1); Location.distanceBetween(p[i-1].latitude,p[i-1].longitude,p[i].latitude,p[i].longitude,r); m+=r[0].toDouble() }; return m }
+ private fun updateRouteProgress(location:Location){ if(routePlaces.isEmpty())return; var next=routePlaces[0]; var best=Float.MAX_VALUE; for(place in routePlaces){ val r=FloatArray(1); Location.distanceBetween(location.latitude,location.longitude,place.lat,place.lon,r); if(r[0]<best){best=r[0];next=place} }; val d=if(best<1000f)"%.0f м".format(java.util.Locale.US,best) else "%.2f км".format(java.util.Locale.US,best/1000.0); status.text="Следующий объект: "+next.name+" · "+d+" · маршрут "+String.format(java.util.Locale.US,"%.2f км",routeDistanceMeters/1000.0) }
  private fun showPlace(p:Place){
   val lines=db.routesForPlace(cityId,p.id)
   val lineText=if(lines.isEmpty())"Линии: —" else "Линии: "+lines.joinToString(", "){it.name}
