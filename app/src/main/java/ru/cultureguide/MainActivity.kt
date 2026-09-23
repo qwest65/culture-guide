@@ -356,8 +356,7 @@ class MainActivity:Activity(){
   override fun onLocationChanged(location:Location){
    lastLocation=location
    showUserLocation(location.latitude,location.longitude,false)
-   if(routePolylines.isNotEmpty())updateRouteProgress(location)
-   status.text="GPS: %.5f, %.5f".format(java.util.Locale.US,location.latitude,location.longitude)
+   if(routePolylines.isNotEmpty()) updateRouteProgress(location) else status.text="GPS: %.5f, %.5f".format(java.util.Locale.US,location.latitude,location.longitude)
   }
  }
 
