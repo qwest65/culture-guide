@@ -35,6 +35,7 @@ import com.yandex.runtime.Error
 import com.yandex.runtime.network.NetworkError
 import com.yandex.runtime.image.ImageProvider
 import java.util.Locale
+import java.lang.ref.WeakReference
 
 class ModernMainActivity : Activity() {
     private lateinit var db: Db
@@ -303,7 +304,7 @@ class ModernMainActivity : Activity() {
                     zIndex = 20f
                 })
                 userData = place
-                addTapListener(placeTapListener)
+                addTapListener(WeakReference(placeTapListener))
             }
         }
 
