@@ -8,14 +8,14 @@
 
 Тематические маршруты, живая навигация по GPS и аудиогид, который рассказывает о каждой достопримечательности, когда вы к ней подходите.
 
-[![Android APK](https://github.com/qwest65/culture-guide/actions/workflows/android.yml/badge.svg?branch=main)](https://github.com/qwest65/culture-guide/actions/workflows/android.yml)
+[![Android APK](https://github.com/qwest65/culture-guide/actions/workflows/android.yml/badge.svg?branch=dev)](https://github.com/qwest65/culture-guide/actions/workflows/android.yml)
 [![Последний релиз](https://img.shields.io/github/v/release/qwest65/culture-guide?label=%D1%80%D0%B5%D0%BB%D0%B8%D0%B7&color=1F4FD1)](https://github.com/qwest65/culture-guide/releases/latest)
 ![Android 8.0+](https://img.shields.io/badge/Android-8.0%2B-3DDC84?logo=android&logoColor=white)
 ![Kotlin](https://img.shields.io/badge/Kotlin-2.1-7F52FF?logo=kotlin&logoColor=white)
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)
 ![Yandex MapKit](https://img.shields.io/badge/Yandex%20MapKit-4.45-FC3F1D)
 
-### [⬇️ Скачать APK](https://github.com/qwest65/culture-guide/releases/download/v0.9.0/CultureGuide-v0.9.0.apk)
+### [⬇️ Скачать APK](https://github.com/qwest65/culture-guide/releases/latest/download/CultureGuide.apk)
 
 </div>
 
@@ -54,7 +54,7 @@
 
 ## Установка на телефон
 
-1. Откройте на телефоне страницу [**Releases**](https://github.com/qwest65/culture-guide/releases/latest) или сразу скачайте [**CultureGuide**](https://github.com/qwest65/culture-guide/releases/download/v0.9.0/CultureGuide-v0.9.0.apk).
+1. Откройте на телефоне страницу [**Releases**](https://github.com/qwest65/culture-guide/releases/latest) или сразу скачайте [**CultureGuide.apk**](https://github.com/qwest65/culture-guide/releases/latest/download/CultureGuide.apk).
 2. Откройте скачанный файл. Если Android спросит, разрешите установку приложений из этого источника (браузера или файлового менеджера).
 3. При первом запуске разрешите доступ к геолокации: без него карта работает, но режим ведения недоступен.
 
@@ -144,12 +144,12 @@ Workflow [`.github/workflows/android.yml`](.github/workflows/android.yml) зап
 
 | Ветка | Что происходит |
 |---|---|
-| `main` | тесты и сборка, затем GitHub Release `v<версия>` с `CultureGuide.apk`, версионированным APK и `SHA256SUMS.txt`, помеченный как Latest |
+| `dev` | тесты и сборка, затем GitHub Release `v<версия>` с единственным файлом `CultureGuide.apk` и `SHA256SUMS.txt`, помеченный как Latest |
 | `claude/**` | тесты и сборка, затем пред-релиз `preview` (не становится Latest) |
 
-Постоянная ссылка на последнюю стабильную версию: `https://github.com/qwest65/culture-guide/releases/latest/download/CultureGuide.apk`.
+Постоянная ссылка на последнюю стабильную версию: https://github.com/qwest65/culture-guide/releases/latest/download/CultureGuide.apk. Номер версии указан в названии релиза и его теге, а не в имени файла.
 
-Чтобы выпустить новую версию, поднимите `versionName` и `versionCode` в [`app/build.gradle.kts`](app/build.gradle.kts) и влейте изменения в `main`. Для работы CI в настройках репозитория нужен secret `MAPKIT_API_KEY`.
+Чтобы выпустить новую версию, поднимите `versionName` и `versionCode` в [`app/build.gradle.kts`](app/build.gradle.kts) и влейте изменения в `dev`. Для работы CI в настройках репозитория нужен secret `MAPKIT_API_KEY`.
 
 ## Дорожная карта
 
