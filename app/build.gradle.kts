@@ -20,8 +20,8 @@ android {
         applicationId = "ru.cultureguide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.7.0"
+        versionCode = 9
+        versionName = "0.8.0"
         buildConfigField("String", "MAPKIT_API_KEY", "\"$mapkitApiKey\"")
     }
     buildFeatures {
@@ -42,4 +42,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation:1.8.3")
     implementation("androidx.compose.runtime:runtime:1.8.3")
     implementation("androidx.compose.material3:material3:1.3.2")
+    implementation("androidx.compose.material:material-icons-core:1.7.8")
+
+    testImplementation("junit:junit:4.13.2")
 }
