@@ -462,8 +462,18 @@ class MainActivity:Activity(){
     AlertDialog.Builder(this@MainActivity).setTitle("Добавить объект").setItems(labels.toTypedArray()){_,which->
      val (obj,point)=results[which]
      try{
-      db.addPlace(cityId,obj.name?:"Без названия","Культура",obj.descriptionText?:"Найдено через Yandex Search","",point.latitude,point.longitude)
-      refresh();showMap();moveCamera(point.latitude,point.longitude,16f)
+      val name=obj.name?:"Без названия"
+      val existing=currentPlaces.firstOrNull{it.name.equals(name,ignoreCase=true)}
+      if(existing!=null){
+       refresh();showMap();showPlace(existing);moveCamera(existing.lat,existing.lon,16f)
+       return@setItems
+      }
+      val uri=obj.metadataContainer.getItem<UriObjectMetadata>()?.uris?.firstOrNull().orEmpty()
+      val sourceUrl=if(uri.startsWith("http"))uri else "https://yandex.ru/maps/?ll="+point.longitude+"%2C"+point.latitude+"&z=16&text="+Uri.encode(name)
+      val address=obj.descriptionText?.takeIf{it.isNotBlank()}.orEmpty()
+      val id=db.addPlace(cityId,name,"Культура",obj.descriptionText?:"Найдено через Yandex Search",address,point.latitude,point.longitude,sourceUrl)
+      refresh();showMap();currentPlaces.firstOrNull{it.id==id}?.let{showPlace(it)}
+      moveCamera(point.latitude,point.longitude,16f)
      }catch(e:Exception){Toast.makeText(this@MainActivity,"Не удалось сохранить объект: "+e.message,Toast.LENGTH_LONG).show()}
     }.show()
    }
