@@ -58,7 +58,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           if gh release view latest >/dev/null 2>&1; then
-            gh release upload latest CultureGuide.apk --clobber
-          else
-            gh release create latest CultureGuide.apk               --title "CultureGuide — latest"               --notes "Последняя успешная Android-сборка CultureGuide."
+            gh release delete latest --yes
           fi
+          gh release create latest CultureGuide.apk \
+            --title "CultureGuide — latest" \
+            --notes "Последняя успешная Android-сборка CultureGuide."
