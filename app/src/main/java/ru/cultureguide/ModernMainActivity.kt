@@ -382,6 +382,53 @@ class ModernMainActivity : ComponentActivity() {
         return meters
     }
 
+    internal fun clearBuiltRoute(clearStops: Boolean) {
+        val map = mapView?.mapWindow?.map
+        if (map != null) {
+            routePolylines.forEach { map.mapObjects.remove(it) }
+        }
+        routePolylines.clear()
+        routeSessions.forEach { it.cancel() }
+        routeSessions.clear()
+        routeDistanceMeters = 0.0
+        builtDistanceMeters = 0.0
+        routeBuilt = false
+        routeBuildGeneration++
+
+        if (clearStops) {
+            selectedRoute = null
+            routePlaces = emptyList()
+            activeStopIndex = 0
+            statusText = "Маршрут очищен"
+        } else if (routePlaces.isEmpty()) {
+            statusText = ""
+        }
+    }
+
+    internal fun togglePlaceInRoute(place: Place) {
+        val currentPlaces = routePlaces.toMutableList()
+        if (currentPlaces.any { it.id == place.id }) {
+            currentPlaces.removeAll { it.id == place.id }
+            statusText = "Удалено из маршрута"
+        } else {
+            currentPlaces.add(place)
+            statusText = "Добавлено в маршрут"
+        }
+        clearBuiltRoute(clearStops = false)
+        routePlaces = currentPlaces
+        activeStopIndex = 0
+    }
+
+    internal fun moveStop(fromIndex: Int, toIndex: Int) {
+        if (fromIndex !in routePlaces.indices || toIndex !in routePlaces.indices) return
+        val currentPlaces = routePlaces.toMutableList()
+        val item = currentPlaces.removeAt(fromIndex)
+        currentPlaces.add(toIndex, item)
+        clearBuiltRoute(clearStops = false)
+        routePlaces = currentPlaces
+        activeStopIndex = 0
+    }
+
     private fun requestLocation() {
         if (
             checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
