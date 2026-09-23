@@ -438,7 +438,12 @@ class MainActivity:Activity(){
     if(results.isEmpty()){Toast.makeText(this@MainActivity,"Город не найден",Toast.LENGTH_LONG).show();return}
     val labels=results.map{it.first+" · %.5f, %.5f".format(java.util.Locale.US,it.second,it.third)}
     AlertDialog.Builder(this@MainActivity).setTitle("Выберите город").setItems(labels.toTypedArray()){_,which->
-     val v=results[which];try{cityId=db.addCity(v.first,"",v.second,v.third);loadCities();selectCityInSpinner();refresh();moveCamera(v.second,v.third,13f)}catch(_:Exception){Toast.makeText(this@MainActivity,"Не удалось добавить город",Toast.LENGTH_LONG).show()}
+     val v=results[which];try{
+      val existing=cities.firstOrNull{it.name.equals(v.first,ignoreCase=true)&&
+       abs(it.lat-v.second)<0.05&&abs(it.lon-v.third)<0.08}
+      cityId=existing?.id?:db.addCity(v.first,"",v.second,v.third)
+      loadCities();selectCityInSpinner();refresh();moveCamera(v.second,v.third,13f)
+     }catch(_:Exception){Toast.makeText(this@MainActivity,"Не удалось добавить город",Toast.LENGTH_LONG).show()}
     }.show()
    }
    override fun onSearchError(error:Error){Toast.makeText(this@MainActivity,if(error is NetworkError)"Нет сети для поиска" else "Ошибка поиска",Toast.LENGTH_LONG).show()}
@@ -466,7 +471,10 @@ class MainActivity:Activity(){
      val (obj,point)=results[which]
      try{
       val name=obj.name?:"Без названия"
-      val existing=currentPlaces.firstOrNull{it.name.equals(name,ignoreCase=true)}
+      val existing=currentPlaces.firstOrNull{
+       it.name.equals(name,ignoreCase=true) ||
+       (abs(it.lat-point.latitude)<0.0005 && abs(it.lon-point.longitude)<0.0008)
+      }
       if(existing!=null){
        refresh();showMap();showPlace(existing);moveCamera(existing.lat,existing.lon,16f)
        return@setItems
@@ -655,7 +663,7 @@ class MainActivity:Activity(){
   selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=emptyList();schemeView.invalidate()
   if(schemeMode)showScheme() else {showMap();drawRoutesOnMap(line.id)};list.removeAllViews()
-  val head=TextView(this);head.text=line.name+"\n"+line.description+"\n"+routePlaces.size+" остановок · ≈ "+formatDistance(routePlaces)+" км по прямой между остановками";head.textSize=18f;head.setPadding(8,10,8,6);list.addView(head)
+  val head=TextView(this);head.text=line.name+"\n"+line.description+"\n"+routePlaces.size+" остановок · расстояние по прямой: ≈ "+formatDistance(routePlaces)+" км";head.textSize=18f;head.setPadding(8,10,8,6);list.addView(head)
   val actions=LinearLayout(this);actions.orientation=LinearLayout.HORIZONTAL
   val start=Button(this);start.text="Начать маршрут";start.setAllCaps(false);start.setOnClickListener{buildRoute()};actions.addView(start,LinearLayout.LayoutParams(0,52,1f))
   val reset=Button(this);reset.text="Сбросить";reset.setAllCaps(false);reset.setOnClickListener{routeProgressIndex=0;visitedRoutePlaceIds.clear();status.text="Прогресс маршрута сброшен"};actions.addView(reset,LinearLayout.LayoutParams(0,52,1f))
