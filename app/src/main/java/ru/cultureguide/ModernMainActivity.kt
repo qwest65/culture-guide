@@ -338,7 +338,7 @@ class ModernMainActivity : ComponentActivity() {
                         zIndex = 6f
                     }
                     routePolylines += line
-                    routeDistanceMeters += polylineDistance(geometry)
+                    routeDistanceMeters += result[0].metadata.weight.distance.value
                     statusText = "Строю пешеходный маршрут… ${index + 1}/${requestPoints.size - 1} · %.2f км".format(
                         Locale.US, routeDistanceMeters / 1000.0
                     )
@@ -365,27 +365,16 @@ class ModernMainActivity : ComponentActivity() {
         if (points.size >= 2) moveCameraToGeometry(Polyline(points))
     }
 
-    private fun polylineDistance(polyline: Polyline): Double {
-        var meters = 0.0
-        val points = polyline.points
-        for (i in 1 until points.size) {
-            val result = FloatArray(1)
-            Location.distanceBetween(
-                points[i - 1].latitude,
-                points[i - 1].longitude,
-                points[i].latitude,
-                points[i].longitude,
-                result
-            )
-            meters += result[0]
-        }
-        return meters
-    }
 
     internal fun clearBuiltRoute(clearStops: Boolean) {
         val map = mapView?.mapWindow?.map
         if (map != null) {
-            routePolylines.forEach { map.mapObjects.remove(it) }
+            routePolylines.toList().forEach { polyline ->
+                map.mapObjects.remove(polyline)
+            }
+        }
+        routePolylines.toList().forEach { polyline ->
+            map?.mapObjects?.remove(polyline)
         }
         routePolylines.clear()
         routeSessions.forEach { it.cancel() }
@@ -407,16 +396,20 @@ class ModernMainActivity : ComponentActivity() {
 
     internal fun togglePlaceInRoute(place: Place) {
         val currentPlaces = routePlaces.toMutableList()
-        if (currentPlaces.any { it.id == place.id }) {
-            currentPlaces.removeAll { it.id == place.id }
-            statusText = "Удалено из маршрута"
-        } else {
+        val wasAdded = currentPlaces.none { it.id == place.id }
+        if (wasAdded) {
             currentPlaces.add(place)
             statusText = "Добавлено в маршрут"
+        } else {
+            currentPlaces.removeAll { it.id == place.id }
+            statusText = "Удалено из маршрута"
         }
         clearBuiltRoute(clearStops = false)
         routePlaces = currentPlaces
         activeStopIndex = 0
+        if (currentPlaces.size >= 2) {
+            buildWalkingRoute()
+        }
     }
 
     internal fun moveStop(fromIndex: Int, toIndex: Int) {

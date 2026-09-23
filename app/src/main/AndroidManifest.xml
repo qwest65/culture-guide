@@ -6,8 +6,8 @@
         android:name=".CultureGuideApp"
         android:theme="@style/AppTheme"
         android:label="@string/app_name"
-        android:icon="@drawable/ic_launcher"
-        android:roundIcon="@drawable/ic_launcher"
+        android:icon="@drawable/ic_app_logo"
+        android:roundIcon="@drawable/ic_app_logo"
         android:allowBackup="true"
         android:supportsRtl="true">
         <activity android:name=".ModernMainActivity" android:screenOrientation="portrait" android:exported="true">
