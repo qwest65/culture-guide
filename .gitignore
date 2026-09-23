@@ -6,3 +6,8 @@ bin/
 *.sqlite3
 .idea/
 .vscode/
+.gradle/
+build/
+app/build/
+local.properties
+*.apk

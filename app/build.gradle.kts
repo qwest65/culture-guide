@@ -20,9 +20,19 @@ android {
         applicationId = "ru.cultureguide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 9
-        versionName = "0.8.0"
+        versionCode = 10
+        versionName = "0.9.0"
         buildConfigField("String", "MAPKIT_API_KEY", "\"$mapkitApiKey\"")
+    }
+    signingConfigs {
+        // Постоянный debug-ключ из репозитория: каждая сборка CI ставится поверх
+        // предыдущей без удаления приложения. Ключ не секретный — только для debug.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
     buildFeatures {
         buildConfig = true

@@ -14,6 +14,7 @@ import androidx.lifecycle.Lifecycle
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.mapview.MapView
 import com.yandex.mapkit.transport.TransportFactory
+import ru.cultureguide.audio.AudioGuide
 import ru.cultureguide.data.CatalogDatabase
 import ru.cultureguide.location.LocationTracker
 import ru.cultureguide.map.MapController
@@ -51,6 +52,7 @@ class MainActivity : ComponentActivity() {
             map = mapController,
             routeBuilder = WalkingRouteBuilder(router),
             approachBuilder = WalkingRouteBuilder(router),
+            audio = AudioGuide(this),
             notify = ::toast
         )
         tracker = LocationTracker(this, controller::onLocation)

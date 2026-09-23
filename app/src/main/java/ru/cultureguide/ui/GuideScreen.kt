@@ -430,6 +430,9 @@ private fun RouteSheet(
         )
         Spacer(Modifier.height(2.dp))
         RouteSummary(controller)
+        if (controller.audio.available && stops.isNotEmpty()) {
+            AudioToggle(controller.autoNarrate, controller::toggleAutoNarrate)
+        }
         Spacer(Modifier.height(8.dp))
 
         if (stops.isEmpty()) {
@@ -514,6 +517,27 @@ private fun RouteSummary(controller: GuideController) {
                 Text("Повторить")
             }
         }
+    }
+}
+
+@Composable
+private fun AudioToggle(enabled: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier
+            .padding(top = 6.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(if (enabled) Palette.PrimarySoft else Palette.Field)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 10.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(if (enabled) "🔊" else "🔇", fontSize = 14.sp)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            if (enabled) "Аудиогид: рассказ у каждой точки" else "Аудиогид выключен",
+            fontSize = 12.sp,
+            color = if (enabled) Palette.Primary else Palette.Muted
+        )
     }
 }
 
@@ -769,7 +793,17 @@ private fun PlaceCard(
             }
 
             Spacer(Modifier.height(14.dp))
-            Text("История", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("История", Modifier.weight(1f), fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                if (controller.audio.available && place.description.isNotBlank()) {
+                    val speaking = controller.audio.speakingPlaceId == place.id
+                    OutlinedButton(onClick = { controller.audio.toggle(place) }, shape = RoundedCornerShape(12.dp)) {
+                        Icon(if (speaking) Icons.Default.Close else Icons.Default.PlayArrow, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (speaking) "Остановить" else "Слушать")
+                    }
+                }
+            }
             Spacer(Modifier.height(6.dp))
             place.description.ifBlank { "Описание пока не добавлено в каталог." }
                 .split("\n")

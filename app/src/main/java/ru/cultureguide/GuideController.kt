@@ -9,6 +9,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.yandex.mapkit.geometry.Point
+import ru.cultureguide.audio.AudioGuide
 import ru.cultureguide.data.CatalogDatabase
 import ru.cultureguide.map.MapController
 import ru.cultureguide.map.RouteLeg
@@ -37,6 +38,7 @@ class GuideController(
     private val map: MapController,
     private val routeBuilder: WalkingRouteBuilder,
     private val approachBuilder: WalkingRouteBuilder,
+    val audio: AudioGuide,
     private val notify: (String) -> Unit
 ) {
     private val prefs = context.getSharedPreferences("guide", Context.MODE_PRIVATE)
@@ -59,6 +61,8 @@ class GuideController(
     var followUser by mutableStateOf(false); private set
     var selectedPlace by mutableStateOf<Place?>(null)
     var message by mutableStateOf(""); private set
+    /** Аудиогид сам читает справку, когда вы подходите к точке маршрута. */
+    var autoNarrate by mutableStateOf(prefs.getBoolean(KEY_AUTO_NARRATE, true)); private set
 
     private var approachLeg by mutableStateOf<RouteLeg?>(null)
     private var approachOrigin: LocationFix? = null
@@ -147,6 +151,7 @@ class GuideController(
     /** Полный сброс: линии, счётчики, остановки и режим ведения. */
     fun resetRoute() {
         stopGuidance()
+        audio.stop()
         setStops(emptyList(), route = null, fit = false)
         message = "Маршрут сброшен"
     }
@@ -277,6 +282,13 @@ class GuideController(
         followUser = false
     }
 
+    fun toggleAutoNarrate() {
+        autoNarrate = !autoNarrate
+        prefs.edit().putBoolean(KEY_AUTO_NARRATE, autoNarrate).apply()
+        if (!autoNarrate) audio.stop()
+        message = if (autoNarrate) "Аудиогид расскажет о каждой точке, когда вы к ней подойдёте" else "Автоматический аудиогид выключен"
+    }
+
     fun toggleFollow() {
         followUser = !followUser
         location?.takeIf { followUser }?.let { map.moveTo(it.lat, it.lon, 16.5f) }
@@ -311,6 +323,7 @@ class GuideController(
                 message = "Вы у «${reachedPlace.name}». Далее: ${next.name}"
                 notify("Вы у «${reachedPlace.name}». Следующая точка — «${next.name}»")
             }
+            if (autoNarrate) audio.speak(reachedPlace)
         } else {
             refreshApproach(force = false)
         }
@@ -412,10 +425,12 @@ class GuideController(
         handler.removeCallbacks(rebuildTask)
         routeBuilder.cancel()
         approachBuilder.cancel()
+        audio.shutdown()
     }
 
     private companion object {
         const val KEY_CITY = "city_id"
+        const val KEY_AUTO_NARRATE = "auto_narrate"
         const val REBUILD_DELAY_MS = 350L
         const val APPROACH_MAX_M = 5_000.0
         const val APPROACH_REUSE_M = 30.0
