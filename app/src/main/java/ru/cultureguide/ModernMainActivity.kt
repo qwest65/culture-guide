@@ -502,7 +502,7 @@ private fun RouteScreen(
                                 Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(Icons.Default.Map, null, Modifier.size(18.dp))
+                                Icon(Icons.Default.LocationOn, null, Modifier.size(18.dp))
                                 Spacer(Modifier.width(6.dp))
                                 Text("Карта", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                                 Spacer(Modifier.width(3.dp))
@@ -585,8 +585,8 @@ private fun RouteScreen(
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 MapControlButton(Icons.Default.Add, "Увеличить", onZoomIn)
-                MapControlButton(Icons.Default.Remove, "Уменьшить", onZoomOut)
-                MapControlButton(Icons.Default.MyLocation, "Моё положение", onLocate)
+                MapControlButton(Icons.Default.Close, "Уменьшить", onZoomOut)
+                MapControlButton(Icons.Default.LocationOn, "Моё положение", onLocate)
             }
 
             if (statusText.isNotBlank()) {
@@ -752,7 +752,7 @@ private fun RouteSheetContent(
                 )
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Default.DirectionsWalk,
+                        Icons.Default.LocationOn,
                         null,
                         Modifier.size(16.dp),
                         tint = Color(0xFF737985)
@@ -828,7 +828,7 @@ private fun RouteSheetContent(
                     Spacer(Modifier.width(12.dp))
                     Icon(
                         if (stop.place.category.contains("музе", true)) {
-                            Icons.Default.Map
+                            Icons.Default.LocationOn
                         } else {
                             Icons.Default.LocationOn
                         },
