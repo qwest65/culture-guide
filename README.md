@@ -54,7 +54,7 @@
 
 ## Установка на телефон
 
-1. Откройте на телефоне страницу [**Releases**](https://github.com/qwest65/culture-guide/releases/latest) или сразу скачайте [**CultureGuide.apk**](https://github.com/qwest65/culture-guide/releases/latest/download/CultureGuide.apk).
+1. Откройте на телефоне страницу [**Releases**](https://github.com/qwest65/culture-guide/releases/latest) или сразу скачайте [**CultureGuide-v0.9.0.apk**](https://github.com/qwest65/culture-guide/releases/download/v0.9.0/CultureGuide-v0.9.0.apk).
 2. Откройте скачанный файл. Если Android спросит, разрешите установку приложений из этого источника (браузера или файлового менеджера).
 3. При первом запуске разрешите доступ к геолокации: без него карта работает, но режим ведения недоступен.
 
