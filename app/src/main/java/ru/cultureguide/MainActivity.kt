@@ -768,7 +768,7 @@ class MainActivity:Activity(){
  private fun buildPedestrianLegs(points:List<Point>,index:Int,token:Int,stopCount:Int){
   if(token!=routeBuildToken)return
   if(index>=points.size-1){
-   status.text="Пешеходный маршрут построен · "+stopCount+" остановок"
+   status.text="Маршрут построен · "+stopCount+" остановок · %.2f км".format(java.util.Locale.US,routeDistanceMeters/1000.0)
    return
   }
   val requestPoints=listOf(
@@ -785,7 +785,8 @@ class MainActivity:Activity(){
      setStrokeColor(Color.rgb(49,94,251));setStrokeWidth(8f);zIndex=3f
     }
     routePolylines+=line
-    status.text="Пешеходный маршрут… "+(index+1)+"/"+(points.size-1)
+    routeDistanceMeters+=polylineDistanceMeters(routes[0].geometry)
+    status.text="Пешеходный маршрут… "+(index+1)+"/"+(points.size-1)+" · %.2f км".format(java.util.Locale.US,routeDistanceMeters/1000.0)
     buildPedestrianLegs(points,index+1,token,stopCount)
    }
    override fun onMasstransitRoutesError(error:Error){
@@ -798,6 +799,7 @@ class MainActivity:Activity(){
   val session=router.requestRoutes(requestPoints,TimeOptions(),RouteOptions(FitnessOptions(false,false)),listener)
   routeSessions+=session
  }
+ private fun polylineDistanceMeters(polyline:com.yandex.mapkit.geometry.Polyline):Double{ val p=polyline.points; var m=0.0; for(i in 1 until p.size){ val r=FloatArray(1); Location.distanceBetween(p[i-1].latitude,p[i-1].longitude,p[i].latitude,p[i].longitude,r); m+=r[0].toDouble() }; return m }
  private fun showPlace(p:Place){
   val lines=db.routesForPlace(cityId,p.id)
   val lineText=if(lines.isEmpty())"Линии: —" else "Линии: "+lines.joinToString(", "){it.name}
