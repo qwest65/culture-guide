@@ -468,14 +468,8 @@ class MainActivity:Activity(){
        refresh();showMap();showPlace(existing);moveCamera(existing.lat,existing.lon,16f)
        return@setItems
       }
-      val uri=obj.metadataContainer.getItem<UriObjectMetadata>()?.uris?.firstOrNull().orEmpty()
-      val sourceUrl=if(uri.startsWith("http"))uri else "https://yandex.ru/maps/?ll="+point.longitude+"%2C"+point.latitude+"&z=16&text="+Uri.encode(name)
-      val business=obj.metadataContainer.getItem<BusinessObjectMetadata>()
-      val address=obj.descriptionText?.takeIf{it.isNotBlank()}.orEmpty()
-      val category=business?.categories?.firstOrNull()?.name?.takeIf{it.isNotBlank()}:?"Культура"
-      val description=business?.name?.takeIf{it.isNotBlank()}?.let{obj.descriptionText?.takeIf{it.isNotBlank()}?:it}
-       ?: obj.descriptionText?:"Найдено через Yandex Search"
-      val id=db.addPlace(cityId,name,category,description,address,point.latitude,point.longitude,sourceUrl)
+      val sourceUrl="https://yandex.ru/maps/?ll="+point.longitude+"%2C"+point.latitude+"&z=16&text="+Uri.encode(name)
+      val id=db.addPlace(cityId,name,"Культура",obj.descriptionText?:"Найдено через Yandex Search",obj.descriptionText?.takeIf{it.isNotBlank()}.orEmpty(),point.latitude,point.longitude,sourceUrl)
       refresh();showMap();currentPlaces.firstOrNull{it.id==id}?.let{showPlace(it)}
       moveCamera(point.latitude,point.longitude,16f)
      }catch(e:Exception){Toast.makeText(this@MainActivity,"Не удалось сохранить объект: "+e.message,Toast.LENGTH_LONG).show()}
