@@ -197,58 +197,111 @@ class Db(ctx:Context):SQLiteOpenHelper(ctx,"culture.db",null,4){
   val root=JSONObject(text)
   require(root.optString("format")=="cultureguide"){"Неверный формат каталога"}
   require(root.optInt("version",-1)==1){"Неподдерживаемая версия каталога"}
+  require(root.has("cities")&&root.has("places")&&root.has("routes")&&root.has("route_places")){"Неполный каталог"}
   val db=writableDatabase
   db.beginTransaction()
   var addedCities=0;var addedPlaces=0;var addedRoutes=0
   try{
    val cityIds=HashMap<Long,Long>();val placeIds=HashMap<Long,Long>();val routeIds=HashMap<Long,Long>()
-   val cj=root.optJSONArray("cities")?:JSONArray()
+   val cj=root.getJSONArray("cities")
    for(i in 0 until cj.length()){
-    val o=cj.getJSONObject(i);val name=o.getString("name");val country=o.optString("country")
+    val o=cj.getJSONObject(i)
+    val sourceId=o.getLong("id")
+    val name=o.getString("name").trim()
+    val country=o.optString("country").trim()
+    require(name.isNotBlank()){"У города нет названия"}
     val existing=db.rawQuery("SELECT id FROM cities WHERE name=? AND country=? LIMIT 1",arrayOf(name,country))
-    var wasExisting=false
-    val id=existing.use{if(it.moveToFirst()){wasExisting=true;it.getLong(0)}else addCity(name,country,o.getDouble("lat"),o.getDouble("lon"))}
-    if(!wasExisting)addedCities++
-    cityIds[o.getLong("id")]=id
-   }
-   val pj=root.optJSONArray("places")?:JSONArray()
-   for(i in 0 until pj.length()){
-    val o=pj.getJSONObject(i);val city=cityIds[o.getLong("city_id")]?:error("Город объекта не найден")
-    val existing=db.rawQuery("SELECT id FROM places WHERE city_id=? AND name=? LIMIT 1",arrayOf(city.toString(),o.getString("name")))
-    var wasExisting=false
     val id=existing.use{
-     if(it.moveToFirst()){wasExisting=true;it.getLong(0)}
-     else addPlace(city,o.getString("name"),o.getString("category"),o.optString("description"),o.optString("address"),o.getDouble("lat"),o.getDouble("lon"),o.optString("source_url"),o.optString("image_url"))
-    }
-    if(!wasExisting)addedPlaces++
-    placeIds[o.getLong("id")]=id
-   }
-   val rj=root.optJSONArray("routes")?:JSONArray()
-   for(i in 0 until rj.length()){
-    val o=rj.getJSONObject(i);val city=cityIds[o.getLong("city_id")]?:error("Город маршрута не найден")
-    val existing=db.rawQuery("SELECT id FROM routes WHERE city_id=? AND name=? LIMIT 1",arrayOf(city.toString(),o.getString("name")))
-    var wasExisting=false
-    val id=existing.use{
-     if(it.moveToFirst()){wasExisting=true;it.getLong(0)}
-     else{
-      val st=db.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)")
-      st.bindLong(1,city);st.bindString(2,o.getString("name"));st.bindString(3,o.optString("description"));st.executeInsert()
+     if(it.moveToFirst()){
+      val value=it.getLong(0)
+      db.compileStatement("UPDATE cities SET lat=?,lon=? WHERE id=?").apply{
+       bindDouble(1,o.getDouble("lat"));bindDouble(2,o.getDouble("lon"));bindLong(3,value)
+      }.executeUpdateDelete()
+      value
+     }else{
+      addedCities++
+      addCity(name,country,o.getDouble("lat"),o.getDouble("lon"))
      }
     }
-    if(!wasExisting)addedRoutes++
-    routeIds[o.getLong("id")]=id
+    cityIds[sourceId]=id
    }
-   val links=root.optJSONArray("route_places")?:JSONArray()
-   val linkStmt=db.compileStatement("INSERT OR IGNORE INTO route_places(route_id,place_id,station_order) VALUES(?,?,?)")
+   val pj=root.getJSONArray("places")
+   for(i in 0 until pj.length()){
+    val o=pj.getJSONObject(i)
+    val sourceId=o.getLong("id")
+    val city=cityIds[o.getLong("city_id")]?:error("Город объекта не найден")
+    val name=o.getString("name").trim()
+    require(name.isNotBlank()){"У объекта нет названия"}
+    val category=o.optString("category").trim()
+    require(category.isNotBlank()){"У объекта нет категории"}
+    val description=o.optString("description").trim()
+    val address=o.optString("address").trim()
+    val lat=o.getDouble("lat")
+    val lon=o.getDouble("lon")
+    require(lat.isFinite()&&lat in -90.0..90.0&&lon.isFinite()&&lon in -180.0..180.0){"Некорректные координаты объекта"}
+    val existing=db.rawQuery("SELECT id FROM places WHERE city_id=? AND name=? LIMIT 1",arrayOf(city.toString(),name))
+    val id=existing.use{
+     if(it.moveToFirst()){
+      val value=it.getLong(0)
+      db.compileStatement("UPDATE places SET category=?,description=?,address=?,lat=?,lon=?,source_url=?,image_url=? WHERE id=?").apply{
+       bindString(1,category);bindString(2,description);bindString(3,address);bindDouble(4,lat);bindDouble(5,lon)
+       bindString(6,o.optString("source_url").trim());bindString(7,o.optString("image_url").trim());bindLong(8,value)
+      }.executeUpdateDelete()
+      value
+     }else{
+      addedPlaces++
+      addPlace(city,name,category,description,address,lat,lon,o.optString("source_url").trim(),o.optString("image_url").trim())
+     }
+    }
+    placeIds[sourceId]=id
+   }
+   val rj=root.getJSONArray("routes")
+   for(i in 0 until rj.length()){
+    val o=rj.getJSONObject(i)
+    val sourceId=o.getLong("id")
+    val city=cityIds[o.getLong("city_id")]?:error("Город маршрута не найден")
+    val name=o.getString("name").trim()
+    require(name.isNotBlank()){"У маршрута нет названия"}
+    val description=o.optString("description").trim()
+    val existing=db.rawQuery("SELECT id FROM routes WHERE city_id=? AND name=? LIMIT 1",arrayOf(city.toString(),name))
+    val id=existing.use{
+     if(it.moveToFirst()){
+      val value=it.getLong(0)
+      db.compileStatement("UPDATE routes SET description=? WHERE id=?").apply{bindString(1,description);bindLong(2,value)}.executeUpdateDelete()
+      value
+     }else{
+      addedRoutes++
+      val st=db.compileStatement("INSERT INTO routes(city_id,name,description) VALUES(?,?,?)")
+      st.bindLong(1,city);st.bindString(2,name);st.bindString(3,description);st.executeInsert()
+     }
+    }
+    routeIds[sourceId]=id
+   }
+   val linksByRoute=HashMap<Long,MutableList<Pair<Int,Long>>>()
+   val links=root.getJSONArray("route_places")
    for(i in 0 until links.length()){
-    val o=links.getJSONObject(i);val route=routeIds[o.getLong("route_id")]?:continue;val place=placeIds[o.getLong("place_id")]?:continue
-    linkStmt.bindLong(1,route);linkStmt.bindLong(2,place);linkStmt.bindLong(3,o.getLong("station_order"));linkStmt.executeInsert()
+    val o=links.getJSONObject(i)
+    val routeId=o.getLong("route_id")
+    val placeId=o.getLong("place_id")
+    val route=routeIds[routeId]?:error("Маршрут связи не найден")
+    val place=placeIds[placeId]?:error("Объект связи не найден")
+    val order=o.getInt("station_order")
+    require(order>=0){"Некорректный порядок остановки"}
+    linksByRoute.getOrPut(route){mutableListOf()}+=order to place
+   }
+   linksByRoute.forEach{(routeId,items)->
+    val seen=HashSet<Long>()
+    val ordered=items.sortedBy{it.first}.map{it.second}.filter{seen.add(it)}
+    db.delete("route_places","route_id=?",arrayOf(routeId.toString()))
+    val stmt=db.compileStatement("INSERT INTO route_places(route_id,place_id,station_order) VALUES(?,?,?)")
+    ordered.forEachIndexed{index,placeId->
+     stmt.bindLong(1,routeId);stmt.bindLong(2,placeId);stmt.bindLong(3,index.toLong());stmt.executeInsert()
+    }
    }
    db.setTransactionSuccessful()
   }finally{db.endTransaction()}
   return Triple(addedCities,addedPlaces,addedRoutes)
  }
-
  fun cities():List<City>{val r=readableDatabase.rawQuery("SELECT id,name,country,lat,lon FROM cities ORDER BY name",null);val a=mutableListOf<City>();r.use{while(it.moveToNext())a+=City(it.getLong(0),it.getString(1),it.getString(2),it.getDouble(3),it.getDouble(4))};return a}
  fun categories(city:Long):List<String>{val r=readableDatabase.rawQuery("SELECT DISTINCT category FROM places WHERE city_id=? ORDER BY category",arrayOf(city.toString()));val a=mutableListOf("Все");r.use{while(it.moveToNext())a+=it.getString(0)};return a}
  fun places(city:Long):List<Place>{val r=readableDatabase.rawQuery("SELECT id,name,category,description,address,lat,lon,source_url,image_url FROM places WHERE city_id=? ORDER BY id",arrayOf(city.toString()));val a=mutableListOf<Place>();r.use{while(it.moveToNext())a+=Place(it.getLong(0),it.getString(1),it.getString(2),it.getString(3),it.getString(4),it.getDouble(5),it.getDouble(6),it.getString(7),it.getString(8))};return a}
