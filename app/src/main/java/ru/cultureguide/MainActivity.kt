@@ -435,50 +435,83 @@ class MainActivity:Activity(){
  }
 
  private fun ui(){
-  val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(14,8,14,8)
-  val title=TextView(this);title.text="Культурный маршрут · v${BuildConfig.VERSION_NAME}";title.textSize=23f;title.setPadding(0,0,0,4);root.addView(title)
-  citySpinner=Spinner(this);root.addView(citySpinner,LinearLayout.LayoutParams(-1,48))
-  val searchRow=LinearLayout(this);searchRow.orientation=LinearLayout.HORIZONTAL
-  searchBox=EditText(this);searchBox.hint="Поиск объекта";searchBox.setSingleLine(true);searchRow.addView(searchBox,LinearLayout.LayoutParams(0,52,1f))
-  categorySpinner=Spinner(this);searchRow.addView(categorySpinner,LinearLayout.LayoutParams(145,52));root.addView(searchRow)
-  val tabsScroll=HorizontalScrollView(this)
+  val root=LinearLayout(this);root.orientation=LinearLayout.VERTICAL;root.setPadding(12,6,12,6)
+  val title=TextView(this);title.text="Культурный маршрут · v"+BuildConfig.VERSION_NAME;title.textSize=22f;title.setTypeface(null,android.graphics.Typeface.BOLD);title.setPadding(4,2,4,2);root.addView(title)
+
+  val cityRow=LinearLayout(this);cityRow.orientation=LinearLayout.HORIZONTAL;cityRow.gravity=android.view.Gravity.CENTER_VERTICAL
+  val cityLabel=TextView(this);cityLabel.text="Город";cityLabel.textSize=14f;cityLabel.setTextColor(Color.DKGRAY);cityRow.addView(cityLabel,LinearLayout.LayoutParams(48,52))
+  citySpinner=Spinner(this)
+  citySpinner.background=android.graphics.drawable.GradientDrawable().apply{setColor(Color.WHITE);setStroke(2,Color.LTGRAY);cornerRadius=18f}
+  cityRow.addView(citySpinner,LinearLayout.LayoutParams(0,52,1f))
+  val manage=Button(this);manage.text="⋮";manage.setAllCaps(false);manage.textSize=22f;manage.setOnClickListener{showAdminMenu()};cityRow.addView(manage,LinearLayout.LayoutParams(52,52))
+  root.addView(cityRow)
+
+  val searchRow=LinearLayout(this);searchRow.orientation=LinearLayout.HORIZONTAL;searchRow.setPadding(0,4,0,4)
+  searchBox=EditText(this);searchBox.hint="Поиск объекта";searchBox.setSingleLine(true);searchBox.setPadding(16,0,12,0)
+  searchBox.background=android.graphics.drawable.GradientDrawable().apply{setColor(Color.WHITE);setStroke(2,Color.LTGRAY);cornerRadius=22f}
+  searchRow.addView(searchBox,LinearLayout.LayoutParams(0,52,1f))
+  categorySpinner=Spinner(this)
+  categorySpinner.background=android.graphics.drawable.GradientDrawable().apply{setColor(Color.WHITE);setStroke(2,Color.LTGRAY);cornerRadius=18f}
+  searchRow.addView(categorySpinner,LinearLayout.LayoutParams(132,52))
+  root.addView(searchRow)
+
+  val tabsScroll=HorizontalScrollView(this);tabsScroll.isHorizontalScrollBarEnabled=false
   val tabs=LinearLayout(this);tabs.orientation=LinearLayout.HORIZONTAL
   val schemeBtn=Button(this);schemeBtn.text="Схема"
   val mapBtn=Button(this);mapBtn.text="Карта"
   val linesBtn=Button(this);linesBtn.text="Линии"
   val routeBtn=Button(this);routeBtn.text="Маршрут"
-  val gpsBtn=Button(this);gpsBtn.text="GPS"
+  val gpsBtn=Button(this);gpsBtn.text="Моё место"
   for(btn in listOf(schemeBtn,mapBtn,linesBtn,routeBtn,gpsBtn)){
-   btn.setTextColor(Color.DKGRAY)
-   btn.setAllCaps(false)
-   btn.setBackgroundColor(Color.WHITE)
-   tabs.addView(btn,LinearLayout.LayoutParams(0,52,1f))
+   btn.setTextColor(Color.DKGRAY);btn.setAllCaps(false)
+   tabs.addView(btn,LinearLayout.LayoutParams(0,48,1f))
   }
-  tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,58))
-  val adminRow=LinearLayout(this);adminRow.orientation=LinearLayout.HORIZONTAL
-  fun adminButton(text:String,onClick:()->Unit){val b=Button(this);b.text=text;b.setAllCaps(false);b.setOnClickListener{onClick()};adminRow.addView(b,LinearLayout.LayoutParams(0,50,1f))}
-  adminButton("Город"){showAddCity()};adminButton("Правка города"){showEditCity()};adminButton("Найти город"){searchCity()};adminButton("Найти объект"){searchPlace()};adminButton("Объект"){showAddPlace()};adminButton("Линия"){showRouteEditor(null)};adminButton("Обновить каталог"){syncRemoteCatalog()};adminButton("Экспорт"){exportCatalog()};adminButton("Импорт"){importCatalog()};root.addView(HorizontalScrollView(this).apply{addView(adminRow);layoutParams=LinearLayout.LayoutParams(-1,50)})
+  tabsScroll.addView(tabs);root.addView(tabsScroll,LinearLayout.LayoutParams(-1,52))
+
   val mapLayer=FrameLayout(this)
   mapView=MapView(this)
   schemeView=MetroView(this)
   schemeView.setBackgroundColor(Color.TRANSPARENT)
   mapLayer.addView(mapView,FrameLayout.LayoutParams(-1,-1))
   mapLayer.addView(schemeView,FrameLayout.LayoutParams(-1,-1))
-  root.addView(mapLayer,LinearLayout.LayoutParams(-1,0,1.15f))
-  status=TextView(this);status.textSize=15f;status.setPadding(4,5,4,5);root.addView(status)
-  val sv=ScrollView(this);list=LinearLayout(this);list.orientation=LinearLayout.VERTICAL;sv.addView(list);root.addView(sv,LinearLayout.LayoutParams(-1,0,1f))
+  root.addView(mapLayer,LinearLayout.LayoutParams(-1,0,1.65f))
+
+  status=TextView(this);status.textSize=14f;status.setPadding(8,3,8,3);root.addView(status,LinearLayout.LayoutParams(-1,34))
+  val sv=ScrollView(this);list=LinearLayout(this);list.orientation=LinearLayout.VERTICAL;sv.addView(list);root.addView(sv,LinearLayout.LayoutParams(-1,0,0.7f))
   setContentView(root)
+
   schemeBtn.setOnClickListener{showScheme()}
   mapBtn.setOnClickListener{showMap()}
   linesBtn.setOnClickListener{showLines()}
-  routeBtn.setOnClickListener{buildRoute()}
+  routeBtn.setOnClickListener{showRouteChooser()}
   gpsBtn.setOnClickListener{requestLocation();lastLocation?.let{showMap();showUserLocation(it.latitude,it.longitude,true)}}
-  categorySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){val values=db.categories(cityId);if(position in values.indices){selectedCategory=values[position];renderPlaces(searchBox.text.toString())}};override fun onNothingSelected(parent:AdapterView<*>) {}}
-  searchBox.addTextChangedListener(object:android.text.TextWatcher{override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){};override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){renderPlaces(s?.toString().orEmpty())};override fun afterTextChanged(s:android.text.Editable?){}})
-  citySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
-   override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){if(position in cities.indices && cityId!=cities[position].id){cityId=cities[position].id;selectedRoute=null;refresh()}}
+
+  categorySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
+   override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){
+    val values=db.categories(cityId);if(position in values.indices){selectedCategory=values[position];renderPlaces(searchBox.text.toString())}
+   }
    override fun onNothingSelected(parent:AdapterView<*>){}
   }
+  searchBox.addTextChangedListener(object:android.text.TextWatcher{
+   override fun beforeTextChanged(s:CharSequence?,start:Int,count:Int,after:Int){}
+   override fun onTextChanged(s:CharSequence?,start:Int,before:Int,count:Int){renderPlaces(s?.toString().orEmpty())}
+   override fun afterTextChanged(s:android.text.Editable?){}
+  })
+  citySpinner.onItemSelectedListener=object:AdapterView.OnItemSelectedListener{
+   override fun onItemSelected(parent:AdapterView<*>,view:View?,position:Int,id:Long){
+    if(position in cities.indices&&cityId!=cities[position].id){cityId=cities[position].id;selectedRoute=null;refresh()}
+   }
+   override fun onNothingSelected(parent:AdapterView<*>){}
+  }
+ }
+
+ private fun showAdminMenu(){
+  val actions=arrayOf("Добавить город","Редактировать город","Найти город","Найти объект","Добавить объект","Создать линию","Обновить каталог","Экспорт каталога","Импорт каталога")
+  AlertDialog.Builder(this).setTitle("Управление каталогом").setItems(actions){_,which->
+   when(which){
+    0->showAddCity();1->showEditCity();2->searchCity();3->searchPlace();4->showAddPlace();5->showRouteEditor(null);6->syncRemoteCatalog();7->exportCatalog();8->importCatalog()
+   }
+  }.show()
  }
 
  private fun selectCityInSpinner(){
@@ -752,6 +785,22 @@ class MainActivity:Activity(){
 
  private fun showMap(){
   schemeMode=false;mapView.visibility=View.VISIBLE;schemeView.visibility=View.GONE
+  drawPlacesOnMap()
+  list.removeAllViews()
+  val header=TextView(this)
+  header.text="Объекты города · "+currentPlaces.size
+  header.textSize=18f;header.setTypeface(null,android.graphics.Typeface.BOLD);header.setPadding(10,8,10,4);list.addView(header)
+  val choose=Button(this);choose.text="Выбрать культурный маршрут";choose.setAllCaps(false);choose.textSize=16f
+  choose.setOnClickListener{showRouteChooser()}
+  list.addView(choose,LinearLayout.LayoutParams(-1,54))
+  val filtered=currentPlaces.filter{selectedCategory=="Все"||it.category==selectedCategory}
+  filtered.take(6).forEachIndexed{i,p->
+   val t=TextView(this);t.text=(i+1).toString()+". "+p.name+"\n"+p.category+" · "+p.address
+   t.textSize=15f;t.setPadding(10,8,10,8)
+   t.setOnClickListener{showPlace(p);moveCamera(p.lat,p.lon,16f)}
+   t.setOnLongClickListener{showPlaceEditor(p);true}
+   list.addView(t)
+  }
   status.text=currentPlaces.size.toString()+" объектов · карта"
  }
 
@@ -797,6 +846,14 @@ class MainActivity:Activity(){
   }
  }
 
+ private fun showRouteChooser(){
+  if(routeLines.isEmpty()){Toast.makeText(this,"В этом городе пока нет культурных линий",Toast.LENGTH_LONG).show();return}
+  val labels=routeLines.map{it.name+" · "+it.placeIds.size+" объектов"}.toTypedArray()
+  AlertDialog.Builder(this).setTitle("Выберите культурный маршрут").setItems(labels){_,which->
+   val line=routeLines[which];selectRoute(line);showMap()
+  }.setNegativeButton("Отмена",null).show()
+ }
+
  private fun selectRoute(line:RouteLine){
   selectedRoute=line;routePlaces=db.routePlaces(line,currentPlaces)
   schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=line.id;schemeView.route=emptyList();schemeView.invalidate()
@@ -808,9 +865,12 @@ class MainActivity:Activity(){
 
  private fun refresh(){
   routeLines=db.routes(cityId);currentPlaces=db.places(cityId);selectedRoute=null;routePlaces=emptyList();selectedCategory="Все"
-  val categories=db.categories(cityId);categorySpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,categories).apply{setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)}
-  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=null;schemeView.route=emptyList();schemeView.invalidate();drawPlacesOnMap();renderPlaces(searchBox.text.toString());showScheme()
+  val categories=db.categories(cityId)
+  categorySpinner.adapter=ArrayAdapter(this,android.R.layout.simple_spinner_item,categories).apply{setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)}
+  schemeView.places=currentPlaces;schemeView.lines=routeLines;schemeView.selectedLineId=null;schemeView.route=emptyList();schemeView.invalidate()
+  drawPlacesOnMap();renderPlaces(searchBox.text.toString());showMap()
  }
+
  private fun renderPlaces(query:String){
   val q=query.trim().lowercase();val filtered=currentPlaces.filter{(selectedCategory=="Все"||it.category==selectedCategory)&&(q.isEmpty()||it.name.lowercase().contains(q)||it.category.lowercase().contains(q)||it.address.lowercase().contains(q))}
   list.removeAllViews()
