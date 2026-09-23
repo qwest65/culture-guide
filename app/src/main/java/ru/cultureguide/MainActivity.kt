@@ -681,7 +681,7 @@ class MainActivity:Activity(){
   val reset=Button(this);reset.text="Сбросить";reset.setAllCaps(false);reset.setOnClickListener{
    routeProgressIndex=0;visitedRoutePlaceIds.clear();renderRouteProgressUi()
    status.text="Прогресс маршрута сброшен"
-   if(routePolylines.isNotEmpty())status.text+=" · маршрут построен: %.2f км".format(java.util.Locale.US,routeDistanceMeters/1000.0)
+   if(routePolylines.isNotEmpty())status.text=status.text.toString()+" · маршрут построен: %.2f км".format(java.util.Locale.US,routeDistanceMeters/1000.0)
   };actions.addView(reset,LinearLayout.LayoutParams(0,52,1f));list.addView(actions)
   routePlaces.forEachIndexed{index,p->
    val done=p.id in visitedRoutePlaceIds
