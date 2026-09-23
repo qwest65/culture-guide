@@ -338,7 +338,7 @@ class ModernMainActivity : ComponentActivity() {
                         zIndex = 6f
                     }
                     routePolylines += line
-                    val legDistanceMeters = result[0].metadata.weight.distance.value
+                    val legDistanceMeters = result[0].metadata.weight.walkingDistance.value
                     routeDistanceMeters += legDistanceMeters
                     statusText = "Строю пешеходный маршрут… ${index + 1}/${requestPoints.size - 1} · %.2f км".format(
                         Locale.US, routeDistanceMeters / 1000.0
