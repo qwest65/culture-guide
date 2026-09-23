@@ -91,6 +91,10 @@ class ModernMainActivity : ComponentActivity() {
     private var userPlacemark: PlacemarkMapObject? = null
     private val routeSessions = mutableListOf<RouteSession>()
     private var routeDistanceMeters = 0.0
+    private var builtDistanceMeters by mutableStateOf(0.0)
+    private var routeBuilt by mutableStateOf(false)
+    private var routeBuildGeneration = 0
+    private val routePolylines = mutableListOf<com.yandex.mapkit.map.PolylineMapObject>()
     private var renderedPlacesKey = ""
 
     private val placeTapListener = MapObjectTapListener { obj, _ ->
@@ -122,8 +126,11 @@ class ModernMainActivity : ComponentActivity() {
                     cities = cities,
                     routes = routes,
                     selectedRoute = selectedRoute,
+                    places = places,
                     routePlaces = routePlaces,
                     activeStopIndex = activeStopIndex,
+                    builtDistanceMeters = builtDistanceMeters,
+                    routeBuilt = routeBuilt,
                     searchQuery = searchQuery,
                     statusText = statusText,
                     onSearchQueryChange = { searchQuery = it },
@@ -136,12 +143,16 @@ class ModernMainActivity : ComponentActivity() {
                         loadCatalog()
                     },
                     onSelectRoute = { route ->
+                        clearBuiltRoute(clearStops = false)
                         selectedRoute = route
                         routePlaces = db.routePlaces(route, places)
                         activeStopIndex = 0
-                        statusText = ""
+                        statusText = "Выбрано: ${route.name}"
                         moveCameraToRoute()
                     },
+                    onTogglePlace = { place -> togglePlaceInRoute(place) },
+                    onMoveStop = { from, to -> moveStop(from, to) },
+                    onClearRoute = { clearBuiltRoute(clearStops = true) },
                     onSelectStop = { index ->
                         activeStopIndex = index
                         routePlaces.getOrNull(index)?.let { moveCamera(it.lat, it.lon, 16f) }
@@ -173,8 +184,10 @@ class ModernMainActivity : ComponentActivity() {
         cityId = city.id
         places = db.places(cityId)
         routes = db.routes(cityId)
-        selectedRoute = selectedRoute?.let { old -> routes.firstOrNull { it.id == old.id } } ?: routes.firstOrNull()
-        routePlaces = selectedRoute?.let { db.routePlaces(it, places) } ?: emptyList()
+        selectedRoute = selectedRoute?.let { old -> routes.firstOrNull { it.id == old.id } }
+        routePlaces = if (selectedRoute != null) db.routePlaces(selectedRoute!!, places) else emptyList()
+        builtDistanceMeters = 0.0
+        routeBuilt = false
         statusText = ""
     }
 
@@ -269,35 +282,6 @@ class ModernMainActivity : ComponentActivity() {
         }
     }
 
-    private fun animateRouteGeometry(geometry: Polyline, durationMs: Long = 700L) {
-        val map = mapView?.mapWindow?.map ?: return
-        val points = geometry.points
-        if (points.size < 2) return
-
-        val routeObject = map.mapObjects.addPolyline(
-            Polyline(points.take(2))
-        ).apply {
-            setStrokeColor(AndroidColor.rgb(39, 112, 239))
-            setStrokeWidth(8f)
-            zIndex = 6f
-        }
-
-        val handler = Handler(Looper.getMainLooper())
-        val startTime = System.currentTimeMillis()
-        val step = object : Runnable {
-            override fun run() {
-                val elapsed = System.currentTimeMillis() - startTime
-                val progress = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
-                val count = 2 + ((points.size - 2) * progress).roundToInt()
-                routeObject.geometry = Polyline(points.take(count.coerceAtMost(points.size)))
-                if (progress < 1f) {
-                    handler.postDelayed(this, 16L)
-                }
-            }
-        }
-        handler.post(step)
-    }
-
     private fun zoomBy(delta: Float) {
         mapView?.let { view ->
             val current = view.mapWindow.map.cameraPosition
@@ -314,84 +298,71 @@ class ModernMainActivity : ComponentActivity() {
 
     private fun buildWalkingRoute() {
         if (routePlaces.size < 2) {
-            statusText = "Выберите маршрут минимум из двух объектов"
+            statusText = "Выберите минимум две точки посещения"
             return
         }
-
-        routeSessions.forEach { it.cancel() }
-        routeSessions.clear()
-        routeDistanceMeters = 0.0
-
-        // MapKit 4.45 pedestrian router accepts two points per request.
-        // Build the complete WAYPOINT list first, then request every consecutive leg.
+        clearBuiltRoute(clearStops = false)
+        val generation = routeBuildGeneration
         val requestPoints = routePlaces.map {
-            RequestPoint(
-                Point(it.lat, it.lon),
-                RequestPointType.WAYPOINT,
-                null,
-                null,
-                null
-            )
+            RequestPoint(Point(it.lat, it.lon), RequestPointType.WAYPOINT, null, null, null)
         }
-
-        statusText = "Строю пешеходный маршрут…"
+        statusText = "Строю пешеходный маршрут… 0/${requestPoints.size - 1}"
 
         fun requestLeg(index: Int) {
+            if (generation != routeBuildGeneration) return
             if (index >= requestPoints.lastIndex) {
-                statusText = "Маршрут построен · %.2f км".format(
-                    Locale.US,
-                    routeDistanceMeters / 1000.0
+                builtDistanceMeters = routeDistanceMeters
+                routeBuilt = true
+                statusText = "Маршрут построен · %.2f км · %d остановок".format(
+                    Locale.US, routeDistanceMeters / 1000.0, routePlaces.size
                 )
+                fitBuiltRoute()
                 return
             }
-
             val router = pedestrianRouter ?: run {
                 statusText = "Пешеходный маршрутизатор недоступен"
                 return
             }
-
-            val legPoints = listOf(requestPoints[index], requestPoints[index + 1])
             val listener = object : RouteSession.RouteListener {
-                override fun onMasstransitRoutes(
-                    result: MutableList<com.yandex.mapkit.transport.masstransit.Route>
-                ) {
+                override fun onMasstransitRoutes(result: MutableList<com.yandex.mapkit.transport.masstransit.Route>) {
+                    if (generation != routeBuildGeneration) return
                     if (result.isEmpty()) {
-                        statusText = "Не удалось построить участок " + (index + 1)
+                        statusText = "Не удалось построить участок ${index + 1}"
                         return
                     }
-
-                    // Only the geometry returned by Yandex is drawn.
                     val geometry = result[0].geometry
-                    animateRouteGeometry(geometry)
-                    moveCameraToGeometry(geometry)
+                    val map = mapView?.mapWindow?.map ?: return
+                    val line = map.mapObjects.addPolyline(geometry).apply {
+                        setStrokeColor(AndroidColor.rgb(39, 112, 239))
+                        setStrokeWidth(8f)
+                        zIndex = 6f
+                    }
+                    routePolylines += line
                     routeDistanceMeters += polylineDistance(geometry)
-
-                    statusText = "Маршрут · участок " + (index + 1) + "/" + (requestPoints.size - 1) +
-                        " · %.2f км".format(
-                            Locale.US,
-                            routeDistanceMeters / 1000.0
-                        )
+                    statusText = "Строю пешеходный маршрут… ${index + 1}/${requestPoints.size - 1} · %.2f км".format(
+                        Locale.US, routeDistanceMeters / 1000.0
+                    )
                     requestLeg(index + 1)
                 }
-
                 override fun onMasstransitRoutesError(error: Error) {
-                    statusText = if (error is NetworkError) {
-                        "Нет сети для построения маршрута"
-                    } else {
-                        "Не удалось построить маршрут"
-                    }
+                    if (generation != routeBuildGeneration) return
+                    statusText = if (error is NetworkError) "Нет сети для построения маршрута" else "Не удалось построить маршрут"
+                    clearBuiltRoute(clearStops = false)
                 }
             }
-
             routeSessions += router.requestRoutes(
-                legPoints,
+                listOf(requestPoints[index], requestPoints[index + 1]),
                 TimeOptions(),
                 RouteOptions(FitnessOptions(false, false)),
                 listener
             )
         }
-
         requestLeg(0)
+    }
+
+    private fun fitBuiltRoute() {
+        val points = routePolylines.flatMap { it.geometry.points }
+        if (points.size >= 2) moveCameraToGeometry(Polyline(points))
     }
 
     private fun polylineDistance(polyline: Polyline): Double {
@@ -467,15 +438,21 @@ private fun RouteScreen(
     activity: ModernMainActivity,
     cities: List<City>,
     routes: List<RouteLine>,
+    places: List<Place>,
     selectedRoute: RouteLine?,
     routePlaces: List<Place>,
     activeStopIndex: Int,
+    builtDistanceMeters: Double,
+    routeBuilt: Boolean,
     searchQuery: String,
     statusText: String,
     onSearchQueryChange: (String) -> Unit,
     onSelectCity: (City) -> Unit,
     onSelectRoute: (RouteLine) -> Unit,
     onSelectStop: (Int) -> Unit,
+    onTogglePlace: (Place) -> Unit,
+    onMoveStop: (Int, Int) -> Unit,
+    onClearRoute: () -> Unit,
     onSearch: () -> Unit,
     onBuildRoute: () -> Unit,
     onLocate: () -> Unit,
@@ -512,9 +489,12 @@ private fun RouteScreen(
             RouteSheetContent(
                 stops = buildRouteStops(routePlaces, activeStopIndex),
                 selectedRoute = selectedRoute,
-                totalDistance = routeTotalDistance(routePlaces),
+                builtDistanceMeters = builtDistanceMeters,
+                routeBuilt = routeBuilt,
                 onSelectStop = onSelectStop,
-                onBuildRoute = onBuildRoute
+                onMoveStop = onMoveStop,
+                onBuildRoute = onBuildRoute,
+                onClearRoute = onClearRoute
             )
         }
     ) { innerPadding ->
@@ -764,27 +744,34 @@ private fun RouteScreen(
     }
 
     activity.selectedPlace?.let { place: Place ->
+        val inRoute = routePlaces.any { it.id == place.id }
         AlertDialog(
             onDismissRequest = { activity.selectedPlace = null },
             title = { Text(place.name) },
             text = {
-                Text(
-                    place.category + "\n\n" + place.description +
-                        "\n\nАдрес: " + place.address
-                )
+                Column {
+                    Text(place.category, fontWeight = FontWeight.SemiBold, color = Color(0xFF5F6672))
+                    Spacer(Modifier.height(12.dp))
+                    Text("Описание", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(place.description.ifBlank { "Описание пока не добавлено в каталог." }, fontSize = 15.sp, lineHeight = 21.sp)
+                    Spacer(Modifier.height(12.dp))
+                    Text("Адрес", fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    Text(place.address)
+                }
             },
             confirmButton = {
-                TextButton(
-                    onClick = {
-                        activity.selectedPlace = null
-                        activity.moveCamera(place.lat, place.lon, 16.5f)
-                    }
-                ) { Text("Показать на карте") }
+                TextButton(onClick = {
+                    onTogglePlace(place)
+                    activity.selectedPlace = null
+                }) { Text(if (inRoute) "Убрать из маршрута" else "Добавить в маршрут") }
             },
             dismissButton = {
-                TextButton(onClick = { activity.selectedPlace = null }) {
-                    Text("Закрыть")
-                }
+                TextButton(onClick = {
+                    activity.selectedPlace = null
+                    activity.moveCamera(place.lat, place.lon, 16.5f)
+                }) { Text("Показать") }
             }
         )
     }
@@ -794,9 +781,12 @@ private fun RouteScreen(
 private fun RouteSheetContent(
     stops: List<RouteStop>,
     selectedRoute: RouteLine?,
-    totalDistance: Double,
+    builtDistanceMeters: Double,
+    routeBuilt: Boolean,
     onSelectStop: (Int) -> Unit,
-    onBuildRoute: () -> Unit
+    onMoveStop: (Int, Int) -> Unit,
+    onBuildRoute: () -> Unit,
+    onClearRoute: () -> Unit
 ) {
     Column(
         Modifier
@@ -826,14 +816,14 @@ private fun RouteSheetContent(
                     )
                     Spacer(Modifier.width(5.dp))
                     Text(
-                        if (selectedRoute == null) {
-                            "Выберите тематическую линию"
-                        } else {
-                            "%.1f км · %d мин".format(
+                        if (routeBuilt) {
+                            "%.2f км · %d мин".format(
                                 Locale.US,
-                                totalDistance / 1000.0,
-                                maxOf(1, (totalDistance / 75.0).roundToInt())
+                                builtDistanceMeters / 1000.0,
+                                maxOf(1, (builtDistanceMeters / 75.0).roundToInt())
                             )
+                        } else {
+                            "Расстояние будет рассчитано по пешеходному маршруту"
                         },
                         color = Color(0xFF737985),
                         fontSize = 13.sp
@@ -916,29 +906,35 @@ private fun RouteSheetContent(
                     Column(horizontalAlignment = Alignment.End) {
                         Text(stop.distance, fontSize = 11.sp, color = Color(0xFF7A808B))
                         Text(stop.time, fontSize = 11.sp, color = Color(0xFF7A808B))
-                    }
-                }
+                        Row {
+                            IconButton(onClick = { onMoveStop(index, index - 1) }, enabled = index > 0, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.KeyboardArrowUp, "Выше", Modifier.size(18.dp))
+                            }
+                            IconButton(onClick = { onMoveStop(index, index + 1) }, enabled = index < stops.lastIndex, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.KeyboardArrowDown, "Ниже", Modifier.size(18.dp))
+                            }
+                        }
+                    }                }
             }
         }
 
         Button(
             onClick = onBuildRoute,
-            enabled = selectedRoute != null,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 10.dp, bottom = 8.dp)
-                .height(50.dp),
+            enabled = stops.size >= 2,
+            modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 4.dp).height(50.dp),
             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
             shape = RoundedCornerShape(12.dp)
+        ) { Text("Построить маршрут", fontSize = 16.sp) }
+
+        OutlinedButton(
+            onClick = onClearRoute,
+            enabled = stops.isNotEmpty() || routeBuilt,
+            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp).height(44.dp),
+            shape = RoundedCornerShape(12.dp)
         ) {
-            Text(
-                if (selectedRoute == null) {
-                    "Выбрать культурный маршрут"
-                } else {
-                    "Построить маршрут"
-                },
-                fontSize = 16.sp
-            )
+            Icon(Icons.Default.Clear, null, Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(if (routeBuilt) "Отменить / сбросить" else "Очистить точки")
         }
     }
 }
@@ -1049,15 +1045,3 @@ private fun buildRouteStops(
         )
     }
 
-private fun routeTotalDistance(places: List<Place>): Double =
-    places.zipWithNext().sumOf { pair ->
-        val result = FloatArray(1)
-        Location.distanceBetween(
-            pair.first.lat,
-            pair.first.lon,
-            pair.second.lat,
-            pair.second.lon,
-            result
-        )
-        result[0].toDouble()
-    }
