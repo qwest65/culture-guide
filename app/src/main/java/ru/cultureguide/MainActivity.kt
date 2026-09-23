@@ -471,9 +471,8 @@ class MainActivity:Activity(){
       val uri=obj.metadataContainer.getItem<UriObjectMetadata>()?.uris?.firstOrNull().orEmpty()
       val sourceUrl=if(uri.startsWith("http"))uri else "https://yandex.ru/maps/?ll="+point.longitude+"%2C"+point.latitude+"&z=16&text="+Uri.encode(name)
       val business=obj.metadataContainer.getItem<BusinessObjectMetadata>()
-      val address=business?.address?.formattedAddress?.takeIf{it.isNotBlank()}
-       ?: obj.descriptionText?.takeIf{it.isNotBlank()}.orEmpty()
-      val category=business?.categories?.firstOrNull()?.name?.takeIf{it.isNotBlank()}?:"Культура"
+      val address=obj.descriptionText?.takeIf{it.isNotBlank()}.orEmpty()
+      val category=business?.categories?.firstOrNull()?.name?.takeIf{it.isNotBlank()}:?"Культура"
       val description=business?.name?.takeIf{it.isNotBlank()}?.let{obj.descriptionText?.takeIf{it.isNotBlank()}?:it}
        ?: obj.descriptionText?:"Найдено через Yandex Search"
       val id=db.addPlace(cityId,name,category,description,address,point.latitude,point.longitude,sourceUrl)
