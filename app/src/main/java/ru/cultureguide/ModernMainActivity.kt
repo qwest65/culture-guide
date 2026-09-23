@@ -24,6 +24,7 @@ import com.yandex.mapkit.map.MapObject
 import com.yandex.mapkit.map.MapObjectTapListener
 import com.yandex.mapkit.map.PlacemarkMapObject
 import com.yandex.mapkit.map.IconStyle
+import com.yandex.runtime.ui_view.ViewProvider
 import com.yandex.mapkit.mapview.MapView
 import com.yandex.mapkit.transport.TransportFactory
 import com.yandex.mapkit.transport.masstransit.FitnessOptions
@@ -35,6 +36,8 @@ import com.yandex.runtime.Error
 import com.yandex.runtime.network.NetworkError
 import com.yandex.runtime.image.ImageProvider
 import java.util.Locale
+import kotlin.math.roundToInt
+import android.graphics.drawable.ColorDrawable
 import java.lang.ref.WeakReference
 
 class ModernMainActivity : Activity() {
@@ -46,8 +49,10 @@ class ModernMainActivity : Activity() {
     private lateinit var sheet: LinearLayout
     private lateinit var sheetTitle: TextView
     private lateinit var sheetSubtitle: TextView
-    private lateinit var routeButton: Button
+    private lateinit var routeButton: TextView
     private lateinit var statusText: TextView
+    private lateinit var routeList: LinearLayout
+    private lateinit var progressRow: LinearLayout
 
     private var cityId = 0L
     private var cities: List<City> = emptyList()
@@ -61,6 +66,7 @@ class ModernMainActivity : Activity() {
     private val routeSessions = mutableListOf<RouteSession>()
     private var pedestrianRouter: PedestrianRouter? = null
     private var routeDistanceMeters = 0.0
+    private var activeStopIndex = 0
 
     private val placeTapListener = MapObjectTapListener { obj, _ ->
         val place = obj.userData as? Place ?: return@MapObjectTapListener false
@@ -118,72 +124,67 @@ class ModernMainActivity : Activity() {
         mapView = MapView(this)
         root.addView(mapView, FrameLayout.LayoutParams(-1, -1))
 
-        val topCard = LinearLayout(this).apply {
+        val topBar = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(12), dp(16), dp(12))
-            background = rounded(Color.WHITE, Color.TRANSPARENT, 20, 0)
-            elevation = dp(8).toFloat()
+            setPadding(dp(16), dp(10), dp(10), dp(8))
+            background = ColorDrawable(Color.WHITE)
+            elevation = dp(3).toFloat()
         }
-        root.addView(topCard, FrameLayout.LayoutParams(-1, dp(142)).apply {
-            leftMargin = dp(12)
-            rightMargin = dp(12)
-            topMargin = dp(30)
-        })
+        root.addView(topBar, FrameLayout.LayoutParams(-1, dp(88)).apply { gravity = Gravity.TOP })
 
         val titleRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val titleBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val title = TextView(this).apply {
             text = "Культурный маршрут"
             textSize = 20f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(28, 31, 38))
+            setTextColor(Color.rgb(31, 36, 48))
         }
-        titleRow.addView(title, LinearLayout.LayoutParams(0, dp(34), 1f))
-        val menu = makeIconButton("⋯")
-        menu.setOnClickListener { showCatalogMenu() }
-        titleRow.addView(menu, LinearLayout.LayoutParams(dp(44), dp(44)))
-        topCard.addView(titleRow)
-
+        titleBlock.addView(title, LinearLayout.LayoutParams(0, dp(28), 1f))
         cityButton = TextView(this).apply {
             text = "Выбор города"
-            textSize = 15f
+            textSize = 13f
+            setTextColor(Color.rgb(105, 111, 122))
             gravity = Gravity.CENTER_VERTICAL
-            setTextColor(Color.rgb(45, 49, 57))
-            setPadding(dp(14), 0, dp(14), 0)
-            background = rounded(Color.rgb(247, 248, 250), Color.TRANSPARENT, 14, 0)
             setOnClickListener { chooseCity() }
         }
-        topCard.addView(cityButton, LinearLayout.LayoutParams(-1, dp(38)).apply { topMargin = dp(4) })
+        titleBlock.addView(cityButton, LinearLayout.LayoutParams(-1, dp(24)))
+        titleRow.addView(titleBlock, LinearLayout.LayoutParams(0, dp(54), 1f))
 
-        val searchRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        searchBox = EditText(this).apply {
-            hint = "Найти место или памятник"
-            textSize = 15f
-            setSingleLine(true)
-            setTextColor(Color.rgb(35, 38, 45))
-            setHintTextColor(Color.rgb(125, 130, 139))
-            setPadding(dp(14), 0, dp(14), 0)
-            background = rounded(Color.WHITE, Color.rgb(220, 223, 229), 16, 1)
+        val mode = TextView(this).apply {
+            text = "Карта  ▾"
+            textSize = 13f
+            gravity = Gravity.CENTER
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.rgb(44, 49, 60))
+            background = rounded(Color.rgb(247, 248, 250), Color.rgb(225, 227, 232), 13, 1)
+            setPadding(dp(10), 0, dp(10), 0)
+            setOnClickListener { showRouteChooser() }
         }
-        searchRow.addView(searchBox, LinearLayout.LayoutParams(0, dp(42), 1f))
-        val filter = makeIconButton("☰")
-        filter.setOnClickListener { chooseCategory() }
-        searchRow.addView(filter, LinearLayout.LayoutParams(dp(42), dp(42)).apply { leftMargin = dp(8) })
-        topCard.addView(searchRow, LinearLayout.LayoutParams(-1, dp(42)).apply { topMargin = dp(6) })
+        titleRow.addView(mode, LinearLayout.LayoutParams(dp(76), dp(38)).apply { rightMargin = dp(2) })
+        topBar.addView(titleRow)
 
-        searchBox.addTextChangedListener(object : android.text.TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
-                renderMap()
-                renderSheet()
-            }
-            override fun afterTextChanged(s: android.text.Editable?) = Unit
-        })
+        val utilityRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val search = TextView(this).apply {
+            text = "⌕  Найти объект"
+            textSize = 13f
+            setTextColor(Color.rgb(112, 117, 128))
+            gravity = Gravity.CENTER_VERTICAL
+            background = rounded(Color.rgb(247, 248, 250), Color.TRANSPARENT, 12, 0)
+            setPadding(dp(12), 0, dp(12), 0)
+            setOnClickListener { showSearchDialog() }
+        }
+        utilityRow.addView(search, LinearLayout.LayoutParams(0, dp(32), 1f))
+        val menu = makeIconButton("⋯")
+        menu.setOnClickListener { showCatalogMenu() }
+        utilityRow.addView(menu, LinearLayout.LayoutParams(dp(38), dp(38)).apply { leftMargin = dp(7) })
+        topBar.addView(utilityRow, LinearLayout.LayoutParams(-1, dp(38)))
 
         val locate = makeIconButton("⌖")
-        root.addView(locate, FrameLayout.LayoutParams(dp(48), dp(48)).apply {
+        root.addView(locate, FrameLayout.LayoutParams(dp(46), dp(46)).apply {
             gravity = Gravity.TOP or Gravity.END
-            topMargin = dp(188)
-            rightMargin = dp(18)
+            topMargin = dp(104)
+            rightMargin = dp(14)
         })
         locate.setOnClickListener {
             requestLocation()
@@ -192,84 +193,135 @@ class ModernMainActivity : Activity() {
 
         sheet = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(9), dp(18), dp(12))
-            background = rounded(Color.WHITE, Color.TRANSPARENT, 26, 0)
-            elevation = dp(16).toFloat()
+            setPadding(dp(16), dp(8), dp(16), dp(12))
+            background = rounded(Color.WHITE, Color.TRANSPARENT, 24, 0)
+            elevation = dp(14).toFloat()
         }
-        root.addView(sheet, FrameLayout.LayoutParams(-1, dp(326)).apply { gravity = Gravity.BOTTOM })
+        root.addView(sheet, FrameLayout.LayoutParams(-1, dp(452)).apply { gravity = Gravity.BOTTOM })
 
-        val handle = View(this).apply { setBackgroundColor(Color.rgb(195, 198, 204)) }
-        sheet.addView(handle, LinearLayout.LayoutParams(dp(42), dp(4)).apply { gravity = Gravity.CENTER_HORIZONTAL })
+        val handle = View(this).apply {
+            background = rounded(Color.rgb(190, 194, 201), Color.TRANSPARENT, 3, 0)
+        }
+        sheet.addView(handle, LinearLayout.LayoutParams(dp(38), dp(4)).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+        })
 
+        val routeHeader = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
+        val headerBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         sheetTitle = TextView(this).apply {
-            textSize = 19f
+            textSize = 18f
             setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.rgb(28, 31, 38))
+            setTextColor(Color.rgb(28, 32, 42))
         }
-        sheet.addView(sheetTitle, LinearLayout.LayoutParams(-1, dp(32)).apply { topMargin = dp(8) })
-
         sheetSubtitle = TextView(this).apply {
-            textSize = 13f
-            setTextColor(Color.rgb(105, 110, 120))
+            textSize = 12f
+            setTextColor(Color.rgb(105, 111, 122))
         }
-        sheet.addView(sheetSubtitle, LinearLayout.LayoutParams(-1, dp(24)))
+        headerBlock.addView(sheetTitle, LinearLayout.LayoutParams(-1, dp(28)))
+        headerBlock.addView(sheetSubtitle, LinearLayout.LayoutParams(-1, dp(22)))
+        routeHeader.addView(headerBlock, LinearLayout.LayoutParams(0, dp(52), 1f))
+
+        val routeAction = TextView(this).apply {
+            text = "⋯"
+            textSize = 22f
+            gravity = Gravity.CENTER
+            setTextColor(Color.rgb(70, 75, 85))
+            setOnClickListener { showRouteChooser() }
+        }
+        routeHeader.addView(routeAction, LinearLayout.LayoutParams(dp(42), dp(42)))
+        sheet.addView(routeHeader, LinearLayout.LayoutParams(-1, dp(54)).apply { topMargin = dp(4) })
+
+        progressRow = LinearLayout(this).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), 0, dp(4), 0)
+        }
+        sheet.addView(progressRow, LinearLayout.LayoutParams(-1, dp(34)).apply { topMargin = dp(2) })
+
+        val divider = View(this).apply { setBackgroundColor(Color.rgb(232, 234, 238)) }
+        sheet.addView(divider, LinearLayout.LayoutParams(-1, dp(1)))
+
+        val scroll = ScrollView(this).apply {
+            isFillViewport = false
+            overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
+            scrollBarStyle = View.SCROLLBARS_INSIDE_INSET
+        }
+        routeList = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(0, dp(2), 0, dp(2))
+        }
+        scroll.addView(routeList, ScrollView.LayoutParams(-1, -2))
+        sheet.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f).apply { topMargin = dp(3) })
 
         routeButton = TextView(this).apply {
-            text = "Выбрать культурный маршрут"
-            textSize = 16f
+            text = "Построить маршрут"
+            textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.WHITE)
             gravity = Gravity.CENTER
-            background = rounded(Color.rgb(49, 94, 251), Color.TRANSPARENT, 16, 0)
-            elevation = dp(3).toFloat()
+            background = rounded(Color.rgb(39, 112, 239), Color.TRANSPARENT, 16, 0)
+            elevation = dp(2).toFloat()
             setOnClickListener {
                 if (selectedRoute == null) showRouteChooser() else buildWalkingRoute()
             }
         }
-        sheet.addView(routeButton, LinearLayout.LayoutParams(-1, dp(52)).apply { topMargin = dp(6) })
-
-        val modes = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        val mapBtn = makeModeButton("Карта")
-        val schemeBtn = makeModeButton("Схема")
-        val routesBtn = makeModeButton("Маршруты")
-        modes.addView(mapBtn, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(4) })
-        modes.addView(schemeBtn, LinearLayout.LayoutParams(0, dp(38), 1f).apply { rightMargin = dp(4) })
-        modes.addView(routesBtn, LinearLayout.LayoutParams(0, dp(38), 1f))
-        sheet.addView(modes, LinearLayout.LayoutParams(-1, dp(46)).apply { topMargin = dp(5) })
-        mapBtn.setOnClickListener { showMapMode() }
-        schemeBtn.setOnClickListener { showSchemeMode() }
-        routesBtn.setOnClickListener { showRouteChooser() }
+        sheet.addView(routeButton, LinearLayout.LayoutParams(-1, dp(48)).apply { topMargin = dp(6) })
 
         statusText = TextView(this).apply {
-            textSize = 12f
-            setTextColor(Color.rgb(120, 124, 132))
-            gravity = Gravity.CENTER_VERTICAL
+            textSize = 11f
+            setTextColor(Color.rgb(120, 125, 135))
+            gravity = Gravity.CENTER
+            maxLines = 1
         }
-        sheet.addView(statusText, LinearLayout.LayoutParams(-1, dp(20)))
+        sheet.addView(statusText, LinearLayout.LayoutParams(-1, dp(18)).apply { topMargin = dp(2) })
+
+        searchBox = EditText(this).apply {
+            setSingleLine(true)
+            visibility = View.GONE
+        }
 
         setContentView(root)
         root.setOnApplyWindowInsetsListener { _, insets ->
             if (android.os.Build.VERSION.SDK_INT >= 30) {
                 val bars = insets.getInsets(android.view.WindowInsets.Type.systemBars())
-                val topLp = topCard.layoutParams as FrameLayout.LayoutParams
-                topLp.topMargin = bars.top + dp(8)
-                topCard.layoutParams = topLp
-                val sheetLp = sheet.layoutParams as FrameLayout.LayoutParams
-                sheetLp.bottomMargin = bars.bottom
-                sheet.layoutParams = sheetLp
+                val topParams = topBar.layoutParams as FrameLayout.LayoutParams
+                topParams.topMargin = bars.top
+                topBar.layoutParams = topParams
+                val bottomParams = sheet.layoutParams as FrameLayout.LayoutParams
+                bottomParams.bottomMargin = bars.bottom
+                sheet.layoutParams = bottomParams
             }
             insets
         }
         root.requestApplyInsets()
+    }
+
+    private fun showSearchDialog() {
+        val input = EditText(this).apply {
+            hint = "Название, категория или адрес"
+            setSingleLine(true)
+            setPadding(dp(12), 0, dp(12), 0)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("Найти объект")
+            .setView(input)
+            .setPositiveButton("Найти") { _, _ ->
+                renderMap(input.text.toString())
+                renderSheet()
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
     }
     private fun loadCatalog() {
         cities = db.cities()
         if (cities.isEmpty()) return
         val city = cities.firstOrNull { it.id == cityId } ?: cities.first()
         cityId = city.id
-        cityButton.text = "⌖  ${city.name}, ${city.country}"
+        cityButton.text = city.name + ", " + city.country
         places = db.places(cityId)
         routes = db.routes(cityId)
+        selectedRoute = routes.firstOrNull()
+        routePlaces = selectedRoute?.let { db.routePlaces(it, places) } ?: emptyList()
+        activeStopIndex = 0
         renderMap()
         renderSheet()
     }
@@ -301,58 +353,187 @@ class ModernMainActivity : Activity() {
         }
     }
 
-    private fun renderMap() {
+    private fun renderMap(query: String? = null) {
         val objects = mapView.mapWindow.map.mapObjects
         objects.clear()
         routeObjects.clear()
         userPlacemark = null
-        val visible = filterPlaces(searchBox.text.toString())
-        val pin = ImageProvider.fromResource(this, R.drawable.ic_map_pin)
 
+        val visible = filterPlaces(query ?: "")
         visible.forEachIndexed { index, place ->
+            val pinView = TextView(this).apply {
+                text = (index + 1).toString()
+                textSize = 12f
+                gravity = Gravity.CENTER
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(Color.WHITE)
+                background = rounded(Color.rgb(39, 112, 239), Color.WHITE, 13, 2)
+                elevation = dp(2).toFloat()
+                layoutParams = ViewGroup.LayoutParams(dp(26), dp(26))
+            }
             objects.addPlacemark().apply {
                 geometry = Point(place.lat, place.lon)
-                setIcon(pin)
-                setIconStyle(IconStyle().apply {
-                    anchor = android.graphics.PointF(0.5f, 1f)
-                    scale = 1.35f
-                    zIndex = 30f
-                    tappableArea = android.graphics.Rect(-14, -14, 14, 14)
-                })
-                setText("K{index + 1}")
-                setTextStyle(TextStyle().apply {
-                    size = 12f
-                    color = Color.WHITE
-                    outlineColor = Color.rgb(49, 94, 251)
-                    placement = TextStyle.Placement.CENTER
-                })
+                setView(
+                    ViewProvider(pinView),
+                    IconStyle().apply {
+                        anchor = android.graphics.PointF(0.5f, 0.5f)
+                        scale = 1.0f
+                        zIndex = 30f
+                    }
+                )
                 userData = place
                 addTapListener(WeakReference(placeTapListener))
             }
         }
 
-        cities.firstOrNull { it.id == cityId }?.let { moveCamera(it.lat, it.lon, 14.8f) }
+        cities.firstOrNull { it.id == cityId }?.let { city ->
+            if (selectedRoute == null) moveCamera(city.lat, city.lon, 14.8f)
+        }
         lastLocation?.let { showUserLocation(it.latitude, it.longitude, false) }
         drawSelectedRoute()
-        statusText.text = "K{visible.size} объектов на карте"
     }
-    private fun renderSheet() {
-        val visible = filterPlaces(searchBox.text.toString())
-        val city = cities.firstOrNull { it.id == cityId }
 
-        sheetTitle.text = if (selectedRoute == null) "Культурные места" else selectedRoute!!.name
-        sheetSubtitle.text = if (selectedRoute == null) {
-            "K{city?.name ?: ""} · K{visible.size} объектов на карте"
+    private fun renderSheet() {
+        val city = cities.firstOrNull { it.id == cityId }
+        val line = selectedRoute
+        val list = routePlaces
+
+        sheetTitle.text = line?.name ?: "Культурные места"
+        sheetSubtitle.text = if (line == null) {
+            (city?.name ?: "") + " · " + filterPlaces().size + " объектов"
         } else {
-            "K{routePlaces.size} остановок · K{selectedRoute!!.description}"
+            list.size.toString() + " объектов · " + (city?.name ?: "")
         }
-        routeButton.text = if (selectedRoute == null) "Выбрать культурный маршрут" else "Построить пеший маршрут"
-        statusText.text = if (selectedRoute == null) {
-            "K{visible.size} объектов · нажмите маркер для подробностей"
-        } else {
-            "K{routePlaces.size} остановок · маршрут готов к построению"
+        routeButton.text = if (line == null) "Выбрать культурный маршрут" else "Построить маршрут"
+
+        progressRow.removeAllViews()
+        if (list.isEmpty()) {
+            progressRow.visibility = View.GONE
+            routeList.removeAllViews()
+            statusText.text = "Выберите культурный маршрут"
+            return
         }
+        progressRow.visibility = View.VISIBLE
+
+        list.forEachIndexed { index, _ ->
+            val marker = TextView(this).apply {
+                text = if (index < activeStopIndex) "✓" else (index + 1).toString()
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (index <= activeStopIndex) Color.WHITE else Color.rgb(102, 108, 119))
+                background = rounded(
+                    if (index < activeStopIndex) Color.rgb(28, 157, 91)
+                    else if (index == activeStopIndex) Color.rgb(39, 112, 239)
+                    else Color.WHITE,
+                    if (index == activeStopIndex) Color.rgb(39, 112, 239) else Color.rgb(205, 208, 215),
+                    11,
+                    1
+                )
+            }
+            progressRow.addView(marker, LinearLayout.LayoutParams(dp(24), dp(24)))
+            if (index < list.lastIndex) {
+                val connector = View(this).apply {
+                    setBackgroundColor(if (index < activeStopIndex) Color.rgb(28, 157, 91) else Color.rgb(210, 213, 219))
+                }
+                progressRow.addView(connector, LinearLayout.LayoutParams(0, dp(2), 1f).apply {
+                    leftMargin = dp(2)
+                    rightMargin = dp(2)
+                })
+            }
+        }
+
+        routeList.removeAllViews()
+        list.forEachIndexed { index, place ->
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                setPadding(dp(2), 0, dp(2), 0)
+                background = if (index == activeStopIndex) rounded(Color.rgb(238, 245, 255), Color.TRANSPARENT, 10, 0) else null
+                setOnClickListener {
+                    activeStopIndex = index
+                    moveCamera(place.lat, place.lon, 16f)
+                    renderSheet()
+                }
+            }
+
+            val state = TextView(this).apply {
+                text = if (index < activeStopIndex) "✓" else (index + 1).toString()
+                textSize = 11f
+                gravity = Gravity.CENTER
+                setTypeface(null, Typeface.BOLD)
+                setTextColor(if (index <= activeStopIndex) Color.WHITE else Color.rgb(105, 111, 122))
+                background = rounded(
+                    if (index < activeStopIndex) Color.rgb(28, 157, 91)
+                    else if (index == activeStopIndex) Color.rgb(39, 112, 239)
+                    else Color.rgb(241, 242, 245),
+                    Color.TRANSPARENT,
+                    10,
+                    0
+                )
+            }
+            row.addView(state, LinearLayout.LayoutParams(dp(22), dp(22)).apply { rightMargin = dp(8) })
+
+            val icon = TextView(this).apply {
+                text = when {
+                    place.category.contains("музе", true) -> "▥"
+                    place.category.contains("памят", true) -> "▲"
+                    place.category.contains("храм", true) -> "✝"
+                    place.category.contains("парк", true) -> "♣"
+                    else -> "●"
+                }
+                textSize = 15f
+                gravity = Gravity.CENTER
+                setTextColor(if (index == activeStopIndex) Color.rgb(39, 112, 239) else Color.rgb(52, 57, 68))
+            }
+            row.addView(icon, LinearLayout.LayoutParams(dp(26), dp(28)))
+
+            val name = TextView(this).apply {
+                text = place.name
+                textSize = 13f
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
+                setTextColor(if (index == activeStopIndex) Color.rgb(39, 112, 239) else Color.rgb(55, 60, 70))
+            }
+            row.addView(name, LinearLayout.LayoutParams(0, dp(34), 1f))
+
+            val distance = if (index == 0) {
+                "0 м"
+            } else {
+                val a = list[index - 1]
+                val result = FloatArray(1)
+                Location.distanceBetween(a.lat, a.lon, place.lat, place.lon, result)
+                result[0].toInt().toString() + " м"
+            }
+            val time = if (index == 0) "—" else {
+                val a = list[index - 1]
+                val result = FloatArray(1)
+                Location.distanceBetween(a.lat, a.lon, place.lat, place.lon, result)
+                "~" + maxOf(1, (result[0] / 75f).roundToInt()) + " мин"
+            }
+            val meta = TextView(this).apply {
+                text = distance + "  " + time
+                textSize = 10f
+                gravity = Gravity.CENTER_VERTICAL or Gravity.END
+                setTextColor(Color.rgb(125, 130, 140))
+            }
+            row.addView(meta, LinearLayout.LayoutParams(dp(72), dp(34)))
+
+            routeList.addView(row, LinearLayout.LayoutParams(-1, dp(36)).apply {
+                topMargin = dp(1)
+                bottomMargin = dp(1)
+            })
+        }
+
+        val total = list.zipWithNext().sumOf { pair ->
+            val result = FloatArray(1)
+            Location.distanceBetween(pair.first.lat, pair.first.lon, pair.second.lat, pair.second.lon, result)
+            result[0].toDouble()
+        }
+        val estimated = maxOf(1, (total / 75.0).roundToInt())
+        statusText.text = "≈ %.1f км · ~%d мин · пешком".format(Locale.US, total / 1000.0, estimated)
     }
+
     private fun showRouteChooser() {
         if (routes.isEmpty()) {
             Toast.makeText(this, "В этом городе пока нет культурных маршрутов", Toast.LENGTH_LONG).show()
@@ -362,6 +543,7 @@ class ModernMainActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Культурные маршруты").setItems(labels) { _, which ->
             selectedRoute = routes[which]
             routePlaces = db.routePlaces(selectedRoute!!, places)
+            activeStopIndex = 0
             drawSelectedRoute()
             renderSheet()
             moveCameraToRoute()
