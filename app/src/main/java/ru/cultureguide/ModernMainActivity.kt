@@ -8,6 +8,8 @@ import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -36,8 +38,10 @@ import androidx.lifecycle.Lifecycle
 import com.yandex.mapkit.MapKitFactory
 import com.yandex.mapkit.RequestPoint
 import com.yandex.mapkit.RequestPointType
+import com.yandex.mapkit.geometry.Geometry
 import com.yandex.mapkit.geometry.Point
 import com.yandex.mapkit.geometry.Polyline
+import com.yandex.mapkit.Animation
 import com.yandex.mapkit.map.CameraPosition
 import com.yandex.mapkit.map.IconStyle
 import com.yandex.mapkit.map.MapObjectTapListener
@@ -87,6 +91,7 @@ class ModernMainActivity : ComponentActivity() {
     private var userPlacemark: PlacemarkMapObject? = null
     private val routeSessions = mutableListOf<RouteSession>()
     private var routeDistanceMeters = 0.0
+    private var renderedPlacesKey = ""
 
     private val placeTapListener = MapObjectTapListener { obj, _ ->
         selectedPlace = obj.userData as? Place
@@ -185,8 +190,19 @@ class ModernMainActivity : ComponentActivity() {
 
     internal fun renderMap(view: MapView) {
         val map = view.mapWindow.map
+        val renderKey = buildString {
+            append(cityId).append('|')
+            append(searchQuery).append('|')
+            append(places.joinToString(",") { it.id.toString() })
+        }
+        if (renderedPlacesKey == renderKey) {
+            lastLocation?.let { showUserLocation(view, it.latitude, it.longitude) }
+            return
+        }
+
         map.mapObjects.clear()
         userPlacemark = null
+        renderedPlacesKey = renderKey
 
         val icon = ImageProvider.fromResource(this, R.drawable.ic_place_pin)
         val visible = if (searchQuery.isBlank()) places else filterPlaces(searchQuery)
@@ -201,16 +217,6 @@ class ModernMainActivity : ComponentActivity() {
                 })
                 userData = place
                 addTapListener(java.lang.ref.WeakReference(placeTapListener))
-            }
-        }
-
-        if (routePlaces.size >= 2) {
-            map.mapObjects.addPolyline(
-                Polyline(routePlaces.map { Point(it.lat, it.lon) })
-            ).apply {
-                setStrokeColor(AndroidColor.rgb(39, 112, 239))
-                setStrokeWidth(6f)
-                zIndex = 5f
             }
         }
 
@@ -253,6 +259,45 @@ class ModernMainActivity : ComponentActivity() {
         routePlaces.firstOrNull()?.let { moveCamera(it.lat, it.lon, 14.8f) }
     }
 
+    private fun moveCameraToGeometry(geometry: Polyline) {
+        mapView?.mapWindow?.map?.let { map ->
+            val cameraPosition = map.cameraPosition(Geometry.fromPolyline(geometry))
+            map.move(
+                cameraPosition,
+                Animation(Animation.Type.LINEAR, 0.8f)
+            )
+        }
+    }
+
+    private fun animateRouteGeometry(geometry: Polyline, durationMs: Long = 700L) {
+        val map = mapView?.mapWindow?.map ?: return
+        val points = geometry.points
+        if (points.size < 2) return
+
+        val routeObject = map.mapObjects.addPolyline(
+            Polyline(points.take(2))
+        ).apply {
+            setStrokeColor(AndroidColor.rgb(39, 112, 239))
+            setStrokeWidth(8f)
+            zIndex = 6f
+        }
+
+        val handler = Handler(Looper.getMainLooper())
+        val startTime = System.currentTimeMillis()
+        val step = object : Runnable {
+            override fun run() {
+                val elapsed = System.currentTimeMillis() - startTime
+                val progress = (elapsed.toFloat() / durationMs).coerceIn(0f, 1f)
+                val count = 2 + ((points.size - 2) * progress).roundToInt()
+                routeObject.geometry = Polyline(points.take(count.coerceAtMost(points.size)))
+                if (progress < 1f) {
+                    handler.postDelayed(this, 16L)
+                }
+            }
+        }
+        handler.post(step)
+    }
+
     private fun zoomBy(delta: Float) {
         mapView?.let { view ->
             val current = view.mapWindow.map.cameraPosition
@@ -268,27 +313,44 @@ class ModernMainActivity : ComponentActivity() {
     }
 
     private fun buildWalkingRoute() {
-        if (routePlaces.size < 2) return
+        if (routePlaces.size < 2) {
+            statusText = "Выберите маршрут минимум из двух объектов"
+            return
+        }
+
         routeSessions.forEach { it.cancel() }
         routeSessions.clear()
         routeDistanceMeters = 0.0
 
-        val points = buildList {
-            lastLocation?.let { add(Point(it.latitude, it.longitude)) }
-            addAll(routePlaces.map { Point(it.lat, it.lon) })
+        // MapKit 4.45 pedestrian router accepts two points per request.
+        // Build the complete WAYPOINT list first, then request every consecutive leg.
+        val requestPoints = routePlaces.map {
+            RequestPoint(
+                Point(it.lat, it.lon),
+                RequestPointType.WAYPOINT,
+                null,
+                null,
+                null
+            )
         }
+
         statusText = "Строю пешеходный маршрут…"
 
-        fun nextLeg(index: Int) {
-            if (index >= points.lastIndex) {
-                statusText = "Маршрут построен · %.2f км".format(Locale.US, routeDistanceMeters / 1000.0)
+        fun requestLeg(index: Int) {
+            if (index >= requestPoints.lastIndex) {
+                statusText = "Маршрут построен · %.2f км".format(
+                    Locale.US,
+                    routeDistanceMeters / 1000.0
+                )
                 return
             }
-            val router = pedestrianRouter ?: return
-            val request = listOf(
-                RequestPoint(points[index], RequestPointType.WAYPOINT, null, null, null),
-                RequestPoint(points[index + 1], RequestPointType.WAYPOINT, null, null, null)
-            )
+
+            val router = pedestrianRouter ?: run {
+                statusText = "Пешеходный маршрутизатор недоступен"
+                return
+            }
+
+            val legPoints = listOf(requestPoints[index], requestPoints[index + 1])
             val listener = object : RouteSession.RouteListener {
                 override fun onMasstransitRoutes(
                     result: MutableList<com.yandex.mapkit.transport.masstransit.Route>
@@ -297,16 +359,19 @@ class ModernMainActivity : ComponentActivity() {
                         statusText = "Не удалось построить участок " + (index + 1)
                         return
                     }
+
+                    // Only the geometry returned by Yandex is drawn.
                     val geometry = result[0].geometry
-                    mapView?.mapWindow?.map?.mapObjects?.addPolyline(geometry)?.apply {
-                        setStrokeColor(AndroidColor.rgb(39, 112, 239))
-                        setStrokeWidth(8f)
-                        zIndex = 6f
-                    }
+                    animateRouteGeometry(geometry)
+                    moveCameraToGeometry(geometry)
                     routeDistanceMeters += polylineDistance(geometry)
-                    statusText = "Маршрут · участок " + (index + 1) + "/" + (points.size - 1) +
-                        " · %.2f км".format(Locale.US, routeDistanceMeters / 1000.0)
-                    nextLeg(index + 1)
+
+                    statusText = "Маршрут · участок " + (index + 1) + "/" + (requestPoints.size - 1) +
+                        " · %.2f км".format(
+                            Locale.US,
+                            routeDistanceMeters / 1000.0
+                        )
+                    requestLeg(index + 1)
                 }
 
                 override fun onMasstransitRoutesError(error: Error) {
@@ -317,14 +382,16 @@ class ModernMainActivity : ComponentActivity() {
                     }
                 }
             }
+
             routeSessions += router.requestRoutes(
-                request,
+                legPoints,
                 TimeOptions(),
                 RouteOptions(FitnessOptions(false, false)),
                 listener
             )
         }
-        nextLeg(0)
+
+        requestLeg(0)
     }
 
     private fun polylineDistance(polyline: Polyline): Double {
