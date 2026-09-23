@@ -850,7 +850,7 @@ class MainActivity:Activity(){
   if(routeLines.isEmpty()){Toast.makeText(this,"В этом городе пока нет культурных линий",Toast.LENGTH_LONG).show();return}
   val labels=routeLines.map{it.name+" · "+it.placeIds.size+" объектов"}.toTypedArray()
   AlertDialog.Builder(this).setTitle("Выберите культурный маршрут").setItems(labels){_,which->
-   val line=routeLines[which];selectRoute(line);showMap()
+   val line=routeLines[which];selectRoute(line)
   }.setNegativeButton("Отмена",null).show()
  }
 
