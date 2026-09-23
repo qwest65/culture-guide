@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Пунктир пешеходного маршрута -->
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M30.5,80a2.5,2.5 0,1 0,5 0a2.5,2.5 0,1 0,-5 0z" />
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M38,85.5a2.5,2.5 0,1 0,5 0a2.5,2.5 0,1 0,-5 0z" />
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M46.5,87.5a2.5,2.5 0,1 0,5 0a2.5,2.5 0,1 0,-5 0z" />
+    <!-- Метка -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M54,21c-12.7,0 -23,10.3 -23,23 0,17.2 23,41 23,41s23,-23.8 23,-41c0,-12.7 -10.3,-23 -23,-23z" />
+    <!-- Классический фасад: фронтон, антаблемент, колонны, стилобат -->
+    <path
+        android:fillColor="#FF1B3FA6"
+        android:pathData="M54,29.5L67.5,37.5H40.5z" />
+    <path
+        android:fillColor="#FF1B3FA6"
+        android:pathData="M41,39h26v3h-26z" />
+    <path
+        android:fillColor="#FF1B3FA6"
+        android:pathData="M43.5,43.5h3.4v11h-3.4zM49.2,43.5h3.4v11h-3.4zM55.4,43.5h3.4v11h-3.4zM61.1,43.5h3.4v11h-3.4z" />
+    <path
+        android:fillColor="#FF1B3FA6"
+        android:pathData="M41,56h26v2.6h-26zM39,59.6h30v2.6h-30z" />
+    <!-- Звезда-акцент на фронтоне -->
+    <path
+        android:fillColor="#FFFFB300"
+        android:pathData="M54,32.2l0.9,1.9 2.1,0.3 -1.5,1.4 0.4,2.1 -1.9,-1 -1.9,1 0.4,-2.1 -1.5,-1.4 2.1,-0.3z" />
+</vector>

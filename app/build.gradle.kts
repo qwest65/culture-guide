@@ -20,9 +20,19 @@ android {
         applicationId = "ru.cultureguide"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.7.0"
+        versionCode = 10
+        versionName = "0.9.0"
         buildConfigField("String", "MAPKIT_API_KEY", "\"$mapkitApiKey\"")
+    }
+    signingConfigs {
+        // Постоянный debug-ключ из репозитория: каждая сборка CI ставится поверх
+        // предыдущей без удаления приложения. Ключ не секретный — только для debug.
+        getByName("debug") {
+            storeFile = file("debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
     }
     buildFeatures {
         buildConfig = true
@@ -42,4 +52,7 @@ dependencies {
     implementation("androidx.compose.foundation:foundation:1.8.3")
     implementation("androidx.compose.runtime:runtime:1.8.3")
     implementation("androidx.compose.material3:material3:1.3.2")
+    implementation("androidx.compose.material:material-icons-core:1.7.8")
+
+    testImplementation("junit:junit:4.13.2")
 }
