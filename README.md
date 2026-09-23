@@ -15,7 +15,7 @@
 ![Jetpack Compose](https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=jetpackcompose&logoColor=white)
 ![Yandex MapKit](https://img.shields.io/badge/Yandex%20MapKit-4.45-FC3F1D)
 
-### [⬇️ Скачать APK]([https://github.com/qwest65/culture-guide/releases/download/v0.9.0/CultureGuide-v0.9.0.apk])
+### [⬇️ Скачать APK](https://github.com/qwest65/culture-guide/releases/download/v0.9.0/CultureGuide-v0.9.0.apk)
 
 </div>
 
