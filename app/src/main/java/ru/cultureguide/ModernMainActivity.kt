@@ -2,11 +2,13 @@ package ru.cultureguide
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.graphics.Color as AndroidColor
 import android.location.Location
 import android.location.LocationListener
 import android.location.LocationManager
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -88,6 +90,7 @@ class ModernMainActivity : ComponentActivity() {
     private var cityId = 0L
     private var mapInitialized = false
     private var lastLocation: Location? = null
+    private var userLocation by mutableStateOf<Location?>(null)
     private var userPlacemark: PlacemarkMapObject? = null
     private val routeSessions = mutableListOf<RouteSession>()
     private var routeDistanceMeters = 0.0
@@ -105,7 +108,41 @@ class ModernMainActivity : ComponentActivity() {
     private val locationListener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             lastLocation = location
-            statusText = "Ваше положение обновлено"
+            userLocation = location
+
+            val activePlace = routePlaces.getOrNull(activeStopIndex)
+            if (routeBuilt && activePlace != null) {
+                val distanceToStop = FloatArray(1)
+                Location.distanceBetween(
+                    location.latitude,
+                    location.longitude,
+                    activePlace.lat,
+                    activePlace.lon,
+                    distanceToStop
+                )
+
+                if (distanceToStop[0] <= 50f) {
+                    statusText = "Вы достигли: " + activePlace.name
+                    if (activeStopIndex < routePlaces.lastIndex) {
+                        activeStopIndex += 1
+                    }
+                }
+
+                mapView?.let { view ->
+                    val map = view.mapWindow.map
+                    val current = map.cameraPosition
+                    map.move(
+                        CameraPosition(
+                            Point(location.latitude, location.longitude),
+                            maxOf(current.zoom, 16f),
+                            current.azimuth,
+                            current.tilt
+                        ),
+                        Animation(Animation.Type.SMOOTH, 0.6f)
+                    )
+                }
+            }
+
             mapView?.let { showUserLocation(it, location.latitude, location.longitude) }
         }
     }
@@ -129,6 +166,7 @@ class ModernMainActivity : ComponentActivity() {
                     places = places,
                     routePlaces = routePlaces,
                     activeStopIndex = activeStopIndex,
+                    userLocation = userLocation,
                     builtDistanceMeters = builtDistanceMeters,
                     routeBuilt = routeBuilt,
                     searchQuery = searchQuery,
@@ -282,6 +320,13 @@ class ModernMainActivity : ComponentActivity() {
         }
     }
 
+    internal fun openInYandexMaps(place: Place) {
+        val uri = Uri.parse(
+            "https://yandex.ru/maps/?rtext=~" + place.lat + "," + place.lon + "&rtt=auto"
+        )
+        startActivity(Intent(Intent.ACTION_VIEW, uri))
+    }
+
     private fun zoomBy(delta: Float) {
         mapView?.let { view ->
             val current = view.mapWindow.map.cameraPosition
@@ -297,6 +342,7 @@ class ModernMainActivity : ComponentActivity() {
     }
 
     private fun buildWalkingRoute() {
+        routeDistanceMeters = 0.0
         if (routePlaces.size < 2) {
             statusText = "Выберите минимум две точки посещения"
             return
@@ -483,6 +529,7 @@ private fun RouteScreen(
     selectedRoute: RouteLine?,
     routePlaces: List<Place>,
     activeStopIndex: Int,
+    userLocation: Location?,
     builtDistanceMeters: Double,
     routeBuilt: Boolean,
     searchQuery: String,
@@ -528,7 +575,7 @@ private fun RouteScreen(
         },
         sheetContent = {
             RouteSheetContent(
-                stops = buildRouteStops(routePlaces, activeStopIndex),
+                stops = buildRouteStops(routePlaces, activeStopIndex, userLocation),
                 selectedRoute = selectedRoute,
                 builtDistanceMeters = builtDistanceMeters,
                 routeBuilt = routeBuilt,
@@ -797,6 +844,15 @@ private fun RouteScreen(
                     Spacer(Modifier.height(4.dp))
                     Text(place.description.ifBlank { "Описание пока не добавлено в каталог." }, fontSize = 15.sp, lineHeight = 21.sp)
                     Spacer(Modifier.height(12.dp))
+                    TextButton(
+                        onClick = { activity.openInYandexMaps(place) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.LocationOn, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Повести по навигатору")
+                    }
+                    Spacer(Modifier.height(4.dp))
                     Text("Адрес", fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(4.dp))
                     Text(place.address)
@@ -1048,13 +1104,40 @@ private fun CultureGuideTheme(content: @Composable () -> Unit) {
 
 private fun buildRouteStops(
     places: List<Place>,
-    activeIndex: Int
+    activeIndex: Int,
+    userLocation: Location?
 ): List<RouteStop> =
     places.mapIndexed { index, place ->
+        val distanceMeters = if (index == activeIndex && userLocation != null) {
+            val result = FloatArray(1)
+            Location.distanceBetween(
+                userLocation.latitude,
+                userLocation.longitude,
+                place.lat,
+                place.lon,
+                result
+            )
+            result[0].toDouble()
+        } else {
+            null
+        }
+
         RouteStop(
             place = place,
-            distance = if (index == 0) "Старт" else "—",
-            time = if (index == 0) "—" else "—",
+            distance = when {
+                index == 0 && index != activeIndex -> "Старт"
+                distanceMeters != null -> if (distanceMeters < 1000.0) {
+                    "%.0f м".format(Locale.US, distanceMeters)
+                } else {
+                    "%.1f км".format(Locale.US, distanceMeters / 1000.0)
+                }
+                else -> "—"
+            },
+            time = if (distanceMeters != null) {
+                (maxOf(1, (distanceMeters / 75.0).roundToInt())).toString() + " мин"
+            } else {
+                "—"
+            },
             status = when {
                 index < activeIndex -> StopStatus.DONE
                 index == activeIndex -> StopStatus.CURRENT
