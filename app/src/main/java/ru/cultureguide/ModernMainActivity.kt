@@ -53,6 +53,7 @@ import com.yandex.runtime.Error
 import com.yandex.runtime.image.ImageProvider
 import com.yandex.runtime.network.NetworkError
 import java.util.Locale
+import java.lang.ref.WeakReference
 import kotlin.math.roundToInt
 
 private enum class StopStatus { DONE, CURRENT, UPCOMING }
@@ -199,7 +200,7 @@ class ModernMainActivity : ComponentActivity() {
                     zIndex = 30f
                 })
                 userData = place
-                addTapListener(placeTapListener)
+                addTapListener(java.lang.ref.WeakReference(placeTapListener))
             }
         }
 
@@ -431,7 +432,6 @@ private fun RouteScreen(
         sheetContainerColor = Color.White,
         sheetShape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
         containerColor = Color(0xFFF1F3F6),
-        contentWindowInsets = WindowInsets.safeDrawing,
         sheetDragHandle = {
             Box(
                 Modifier
@@ -696,9 +696,9 @@ private fun RouteScreen(
         )
     }
 
-    activity.selectedPlace.value?.let { place ->
+    activity.selectedPlace?.let { place: Place ->
         AlertDialog(
-            onDismissRequest = { activity.selectedPlace.value = null },
+            onDismissRequest = { activity.selectedPlace = null },
             title = { Text(place.name) },
             text = {
                 Text(
