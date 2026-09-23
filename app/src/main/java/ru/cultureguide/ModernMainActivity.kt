@@ -167,9 +167,9 @@ class ModernMainActivity : ComponentActivity() {
         cityId = city.id
         places = db.places(cityId)
         routes = db.routes(cityId)
-        selectedRoute = selectedRoute?.let { old -> routes.firstOrNull { it.id == old.id } }
+        selectedRoute = selectedRoute?.let { old -> routes.firstOrNull { it.id == old.id } } ?: routes.firstOrNull()
         routePlaces = selectedRoute?.let { db.routePlaces(it, places) } ?: emptyList()
-        statusText = if (selectedRoute == null) "Выберите культурный маршрут" else ""
+        statusText = ""
     }
 
     private fun filterPlaces(query: String): List<Place> {
