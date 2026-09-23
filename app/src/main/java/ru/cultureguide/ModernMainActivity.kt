@@ -291,53 +291,53 @@ class ModernMainActivity : Activity() {
         objects.clear()
         routeObjects.clear()
         userPlacemark = null
-        val filtered = filterPlaces(searchBox.text.toString())
+        val visible = filterPlaces(searchBox.text.toString())
         val pin = ImageProvider.fromResource(this, R.drawable.ic_map_pin)
 
-        filtered.forEach { place ->
+        visible.forEachIndexed { index, place ->
             objects.addPlacemark().apply {
                 geometry = Point(place.lat, place.lon)
                 setIcon(pin)
                 setIconStyle(IconStyle().apply {
                     anchor = android.graphics.PointF(0.5f, 1f)
-                    scale = 1.15f
-                    zIndex = 20f
+                    scale = 1.35f
+                    zIndex = 30f
+                    tappableArea = android.graphics.Rect(-14, -14, 14, 14)
+                })
+                setText("K{index + 1}")
+                setTextStyle(TextStyle().apply {
+                    size = 12f
+                    color = Color.WHITE
+                    outlineColor = Color.rgb(49, 94, 251)
+                    placement = TextStyle.Placement.CENTER
                 })
                 userData = place
                 addTapListener(WeakReference(placeTapListener))
             }
         }
 
-        cities.firstOrNull { it.id == cityId }?.let { moveCamera(it.lat, it.lon, 14.2f) }
+        cities.firstOrNull { it.id == cityId }?.let { moveCamera(it.lat, it.lon, 14.8f) }
         lastLocation?.let { showUserLocation(it.latitude, it.longitude, false) }
         drawSelectedRoute()
-        statusText.text = "${filtered.size} объектов на карте"
+        statusText.text = "K{visible.size} объектов на карте"
     }
-
     private fun renderSheet() {
         val visible = filterPlaces(searchBox.text.toString())
         val city = cities.firstOrNull { it.id == cityId }
+
         sheetTitle.text = if (selectedRoute == null) "Культурные места" else selectedRoute!!.name
-        sheetSubtitle.text = if (selectedRoute == null)
-            "${city?.name ?: ""} · ${visible.size} объектов на карте"
-        else
-            "${routePlaces.size} остановок · ${selectedRoute!!.description}"
-        routeButton.text = if (selectedRoute == null) "Выбрать культурный маршрут" else "Построить пеший маршрут"
-
-        while (sheet.childCount > 6) sheet.removeViewAt(6)
-        visible.take(3).forEachIndexed { index, place ->
-            val row = TextView(this).apply {
-                text = "${index + 1}  ${place.name}\n${place.category} · ${place.address}"
-                textSize = 13f
-                setTextColor(Color.rgb(55, 59, 66))
-                setPadding(4, 6, 4, 6)
-                setOnClickListener { showPlace(place) }
-            }
-            sheet.addView(row, sheet.childCount - 1)
+        sheetSubtitle.text = if (selectedRoute == null) {
+            "K{city?.name ?: ""} · K{visible.size} объектов на карте"
+        } else {
+            "K{routePlaces.size} остановок · K{selectedRoute!!.description}"
         }
-        statusText.text = if (selectedRoute == null) "${visible.size} объектов" else "${routePlaces.size} остановок"
+        routeButton.text = if (selectedRoute == null) "Выбрать культурный маршрут" else "Построить пеший маршрут"
+        statusText.text = if (selectedRoute == null) {
+            "K{visible.size} объектов · нажмите маркер для подробностей"
+        } else {
+            "K{routePlaces.size} остановок · маршрут готов к построению"
+        }
     }
-
     private fun showRouteChooser() {
         if (routes.isEmpty()) {
             Toast.makeText(this, "В этом городе пока нет культурных маршрутов", Toast.LENGTH_LONG).show()
