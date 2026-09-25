@@ -11,7 +11,7 @@ import ru.cultureguide.model.RouteLine
 
 /**
  * Локальное хранилище каталога. Источник данных — `assets/catalog.json`
- * (`app/src/main/assets/catalog.json`). При изменении поля `revision` в JSON
+ * (`core/src/main/assets/catalog.json`). При изменении поля `revision` в JSON
  * каталог повторно сливается с базой: описания обновляются, новые объекты и маршруты добавляются.
  */
 class CatalogDatabase(private val context: Context) :

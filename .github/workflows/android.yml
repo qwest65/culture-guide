@@ -48,18 +48,33 @@ jobs:
           echo "code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
           echo "sha=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
           echo "APK version: $VERSION_NAME ($VERSION_CODE), commit ${GITHUB_SHA::7}"
+          KIDS_NAME=$(grep 'versionName' app-kids/build.gradle.kts | sed -E 's/.*"([^"]+)".*/\1/')
+          KIDS_CODE=$(grep 'versionCode' app-kids/build.gradle.kts | sed -E 's/[^0-9]*([0-9]+).*/\1/')
+          echo "kids_name=$KIDS_NAME" >> "$GITHUB_OUTPUT"
+          echo "kids_code=$KIDS_CODE" >> "$GITHUB_OUTPUT"
+          echo "Kids APK version: $KIDS_NAME ($KIDS_CODE)"
 
       - name: Prepare APK
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/CultureGuide.apk
           (cd dist && sha256sum CultureGuide.apk > SHA256SUMS.txt)
-          ls -lh dist
+          mkdir -p dist-kids dist-preview
+          cp app-kids/build/outputs/apk/debug/app-kids-debug.apk dist-kids/MalenkiyKaravan.apk
+          (cd dist-kids && sha256sum MalenkiyKaravan.apk > SHA256SUMS.txt)
+          cat dist/SHA256SUMS.txt dist-kids/SHA256SUMS.txt > dist-preview/SHA256SUMS.txt
+          ls -lh dist dist-kids
 
       - uses: actions/upload-artifact@v4
         with:
           name: CultureGuide-v${{ steps.version.outputs.name }}-${{ steps.version.outputs.sha }}
           path: dist/CultureGuide.apk
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MalenkiyKaravan-v${{ steps.version.outputs.kids_name }}-${{ steps.version.outputs.sha }}
+          path: dist-kids/MalenkiyKaravan.apk
           if-no-files-found: error
 
       - name: Write release notes
@@ -86,6 +101,29 @@ jobs:
           Контрольные суммы — в файле \`SHA256SUMS.txt\`.
           NOTES
 
+      - name: Write kids release notes
+        env:
+          VERSION: ${{ steps.version.outputs.kids_name }}
+          CODE: ${{ steps.version.outputs.kids_code }}
+          SHA: ${{ steps.version.outputs.sha }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          cat > notes-kids.md <<NOTES
+          ## Маленький караван ${VERSION}
+
+          Прогулка для детей 4–7 лет с родителями: верблюжонок Троша потерял вещи в Троицке.
+          Сборка \`${VERSION}\` (versionCode ${CODE}) из ветки \`${BRANCH}\`, коммит [\`${SHA}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/commit/${GITHUB_SHA}).
+
+          ### Как установить на телефон
+
+          1. Скачайте **MalenkiyKaravan.apk** (версия ${VERSION}) из списка файлов ниже (Assets).
+          2. Откройте файл на телефоне и разрешите установку из этого источника, если Android попросит.
+          3. Перед прогулкой разрешите доступ к геолокации — так Троша узнает, что вы дошли до точки.
+
+          Требуется Android 8.0 или новее. Контрольные суммы — в файле \`SHA256SUMS.txt\`.
+          NOTES
+          { cat notes.md; echo; echo '---'; echo; cat notes-kids.md; } > notes-preview.md
+
       - name: Publish release
         if: github.ref == 'refs/heads/dev'
         env:
@@ -106,6 +144,21 @@ jobs:
             --notes-file notes.md \
             --latest
 
+      - name: Publish kids release
+        if: github.ref == 'refs/heads/dev'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.kids_name }}
+        run: |
+          # Постоянный тег karavan: ссылка на MalenkiyKaravan.apk не меняется от версии к версии.
+          gh release delete karavan --yes --cleanup-tag 2>/dev/null || true
+          gh release create karavan \
+            dist-kids/MalenkiyKaravan.apk dist-kids/SHA256SUMS.txt \
+            --target "$GITHUB_SHA" \
+            --title "Маленький караван ${VERSION}" \
+            --notes-file notes-kids.md \
+            --latest=false
+
       - name: Publish preview pre-release
         if: github.ref != 'refs/heads/dev'
         env:
@@ -114,9 +167,9 @@ jobs:
         run: |
           gh release delete preview --yes --cleanup-tag 2>/dev/null || true
           gh release create preview \
-            dist/CultureGuide.apk dist/SHA256SUMS.txt \
+            dist/CultureGuide.apk dist-kids/MalenkiyKaravan.apk dist-preview/SHA256SUMS.txt \
             --target "$GITHUB_SHA" \
             --title "Предварительная сборка ${VERSION} (${GITHUB_REF_NAME})" \
-            --notes-file notes.md \
+            --notes-file notes-preview.md \
             --prerelease \
             --latest=false
