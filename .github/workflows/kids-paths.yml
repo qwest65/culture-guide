@@ -4,7 +4,7 @@ name: Kids walking paths
 # результат коммитится в assets/kids/paths.json, и приложение работает с ним без интернета.
 on:
   push:
-    branches: ["claude/**"]
+    branches: ["karavan", "claude/**"]
     paths:
       - "app-kids/src/main/assets/kids/route.json"
       - "core/src/main/assets/catalog.json"
