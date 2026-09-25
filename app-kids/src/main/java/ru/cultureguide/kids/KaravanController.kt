@@ -10,17 +10,25 @@ import ru.cultureguide.kids.audio.ClipPlayer
 import ru.cultureguide.kids.content.Clips
 import ru.cultureguide.kids.content.Journey
 import ru.cultureguide.kids.content.KidsRoute
-import ru.cultureguide.kids.content.WalkPath
+import ru.cultureguide.kids.content.RoutePaths
 import ru.cultureguide.kids.content.walkingMeters
 import ru.cultureguide.model.Place
 import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.GuidanceEngine
 import ru.cultureguide.navigation.LocationFix
 
-enum class Screen { Home, Walk, Stop, Finale, Album }
+enum class Screen { Home, Choose, Walk, Stop, Finale, Album }
+
+/** Итог прогулки для финального экрана. */
+data class WalkResult(
+    /** Все выбранные точки пройдены, и что-то найдено — дают значок. */
+    val complete: Boolean,
+    /** Вещи, найденные на этой прогулке, в порядке маршрута. */
+    val found: List<Int>
+)
 
 /**
- * Состояние «Маленького каравана»: какой экран открыт, сколько вещей Троши найдено
+ * Состояние «Маленького каравана»: какой экран открыт, куда идём, что уже в альбоме
  * и где сейчас ребёнок с родителем.
  */
 class KaravanController(
@@ -28,13 +36,13 @@ class KaravanController(
     val route: KidsRoute,
     /** Объекты общего каталога для точек маршрута, в порядке [KidsRoute.stops]. */
     val places: List<Place>,
-    /** Пешеходные линии между точками; пусто — считаем расстояние по прямой. */
-    val paths: List<WalkPath>,
+    /** Пешеходные линии между точками; без них расстояние считается по прямой. */
+    val paths: RoutePaths,
     val player: ClipPlayer,
     private val audioGuide: AudioGuide
 ) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-    // Детский маршрут проходится строго по порядку: засчитываем только текущую точку.
+    // Точки проходятся строго по порядку: засчитываем только текущую.
     private val engine = GuidanceEngine(lookAhead = 0)
     private val points = places.map { GeoPoint(it.lat, it.lon) }
 
@@ -50,26 +58,59 @@ class KaravanController(
     /** Сколько идти до следующей точки, м; null — позиция неизвестна. */
     var distanceToTarget by mutableStateOf<Double?>(null)
         private set
-
-    /** Длина всего маршрута по пешеходным линиям, м; null — линий нет. */
-    val routeMeters: Double? = paths.takeIf { it.size == places.size - 1 }?.sumOf { it.lengthMeters }
+    var result by mutableStateOf<WalkResult?>(null)
+        private set
 
     val parentStoryPlaying: Boolean get() = audioGuide.speakingPlaceId == places.getOrNull(openedStop)?.id
 
-    fun startWalk() {
+    /** Длина прогулки по выбранным точкам вдоль пешеходных линий; null — линий нет. */
+    fun planMeters(plan: List<Int>): Double? = paths.planMeters(plan.sorted())
+
+    fun openChooser() {
         stopAudio()
-        if (journey.finished) {
-            screen = Screen.Finale
-            return
-        }
-        if (!journey.started) {
-            journey = journey.start().also(::save)
-            player.play(Clips.INTRO, Clips.ROAD)
-        } else {
-            player.play(Clips.GO)
-        }
+        screen = Screen.Choose
+    }
+
+    /** Новая прогулка по выбранным точкам. */
+    fun startWalk(selection: Collection<Int>) {
+        if (selection.isEmpty()) return
+        stopAudio()
+        journey = journey.start(selection).also(::save)
         screen = Screen.Walk
+        player.play(Clips.INTRO, Clips.ROAD)
         location?.let(::updateGuidance)
+    }
+
+    fun resumeWalk() {
+        if (!journey.inProgress) return
+        stopAudio()
+        screen = Screen.Walk
+        player.play(Clips.GO)
+        location?.let(::updateGuidance)
+    }
+
+    /** Пауза: прогулка сохраняется, её можно продолжить с главного экрана. */
+    fun pause() {
+        stopAudio()
+        screen = Screen.Home
+    }
+
+    /** Закончить прогулку раньше; найденные вещи остаются в альбоме. */
+    fun finishWalk() {
+        if (journey.inProgress) endWalk(complete = false)
+    }
+
+    /** Пропустить текущую точку: закрыто, далеко или просто не хочется. */
+    fun skipStop() {
+        stopAudio()
+        journey = journey.skip().also(::save)
+        if (journey.walkComplete) {
+            endWalk(complete = journey.walkFound.isNotEmpty())
+        } else {
+            screen = Screen.Walk
+            player.play(Clips.GO)
+            location?.let(::updateGuidance)
+        }
     }
 
     fun onLocation(loc: Location) {
@@ -79,23 +120,25 @@ class KaravanController(
     }
 
     private fun updateGuidance(fix: LocationFix) {
-        if (journey.finished) {
+        val target = journey.activeStop
+        if (target == null) {
             distanceToTarget = null
             return
         }
-        val update = engine.update(points, journey.activeIndex, fix)
-        // К точке i ведёт линия i - 1; к первой точке линии нет — идём от того места, где стоим.
-        distanceToTarget = update.distanceToTarget?.let { walkingMeters(paths.getOrNull(journey.activeIndex - 1), fix, it) }
+        val update = engine.update(journey.plan.map { points[it] }, journey.position, fix)
+        // К первой точке прогулки линии нет — идём от того места, где стоим.
+        val path = journey.previousStop?.let { paths.between(it, target) }
+        distanceToTarget = update.distanceToTarget?.let { walkingMeters(path, fix, it) }
         if (update.reached.isNotEmpty() && screen == Screen.Walk) arrive()
     }
 
     /** Подошли к точке — по GPS или по кнопке «Мы на месте!». */
     fun arrive() {
-        if (journey.finished) return
-        openedStop = journey.activeIndex
+        val stop = journey.activeStop ?: return
+        openedStop = stop
         screen = Screen.Stop
         audioGuide.stop()
-        player.play(Clips.arrival(openedStop))
+        player.play(Clips.arrival(stop))
     }
 
     fun replayStop() {
@@ -107,9 +150,8 @@ class KaravanController(
     fun completeStop() {
         stopAudio()
         journey = journey.collect(openedStop).also(::save)
-        if (journey.finished) {
-            screen = Screen.Finale
-            player.play(Clips.BELL, Clips.FOUND)
+        if (journey.walkComplete) {
+            endWalk(complete = true)
         } else {
             screen = Screen.Walk
             player.play(Clips.FOUND, Clips.GO)
@@ -117,16 +159,25 @@ class KaravanController(
         }
     }
 
-    /** Подробная историческая справка из общего каталога — для взрослых, голосом синтезатора. */
-    fun toggleParentStory() {
-        player.stop()
-        places.getOrNull(openedStop)?.let(audioGuide::toggle)
+    private fun endWalk(complete: Boolean) {
+        stopAudio()
+        result = WalkResult(complete, journey.walkFound.sorted())
+        journey = journey.finish().also(::save)
+        distanceToTarget = null
+        screen = Screen.Finale
+        if (complete) player.play(Clips.BELL, Clips.FINALE) else player.play(Clips.LATER)
     }
 
     /** С экрана точки обратно на карту, не засчитывая находку. */
     fun backToWalk() {
         stopAudio()
         screen = Screen.Walk
+    }
+
+    /** Подробная историческая справка из общего каталога — для взрослых, голосом синтезатора. */
+    fun toggleParentStory() {
+        player.stop()
+        places.getOrNull(openedStop)?.let(audioGuide::toggle)
     }
 
     fun openAlbum() {
@@ -139,7 +190,8 @@ class KaravanController(
         screen = Screen.Home
     }
 
-    fun resetJourney() {
+    /** Очистить альбом и значок; начатая прогулка тоже сбрасывается. */
+    fun resetAlbum() {
         stopAudio()
         journey = journey.reset().also(::save)
         screen = Screen.Home
@@ -158,21 +210,38 @@ class KaravanController(
     private fun loadJourney(): Journey {
         val count = route.stops.size
         if (prefs.getString(KEY_ROUTE, null) != route.id) return Journey(count)
-        return Journey(count, prefs.getInt(KEY_FOUND, 0).coerceIn(0, count), prefs.getBoolean(KEY_STARTED, false))
+        fun indices(key: String) =
+            prefs.getString(key, "").orEmpty().split(',').mapNotNull { it.toIntOrNull() }.filter { it in 0 until count }
+        val plan = indices(KEY_PLAN).distinct().sorted()
+        return Journey(
+            stopCount = count,
+            plan = plan,
+            position = prefs.getInt(KEY_POSITION, 0).coerceIn(0, plan.size),
+            found = indices(KEY_FOUND).toSet(),
+            walkFound = indices(KEY_WALK_FOUND).toSet(),
+            badge = prefs.getBoolean(KEY_BADGE, false)
+        )
     }
 
     private fun save(journey: Journey) {
         prefs.edit()
             .putString(KEY_ROUTE, route.id)
-            .putInt(KEY_FOUND, journey.found)
-            .putBoolean(KEY_STARTED, journey.started)
+            .putString(KEY_PLAN, journey.plan.joinToString(","))
+            .putInt(KEY_POSITION, journey.position)
+            .putString(KEY_FOUND, journey.found.sorted().joinToString(","))
+            .putString(KEY_WALK_FOUND, journey.walkFound.sorted().joinToString(","))
+            .putBoolean(KEY_BADGE, journey.badge)
             .apply()
     }
 
     private companion object {
-        const val PREFS = "journey"
+        // Новое имя файла: в «journey» версии 0.1.0 прогресс хранился в другом формате.
+        const val PREFS = "journey2"
         const val KEY_ROUTE = "route"
+        const val KEY_PLAN = "plan"
+        const val KEY_POSITION = "position"
         const val KEY_FOUND = "found"
-        const val KEY_STARTED = "started"
+        const val KEY_WALK_FOUND = "walk_found"
+        const val KEY_BADGE = "badge"
     }
 }

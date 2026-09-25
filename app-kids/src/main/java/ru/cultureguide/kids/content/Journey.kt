@@ -3,25 +3,66 @@ package ru.cultureguide.kids.content
 import kotlin.math.roundToInt
 
 /**
- * Прогресс прогулки. Точки проходятся строго по порядку, поэтому достаточно
- * числа найденных вещей: следующая цель — точка с индексом [found].
+ * Прогулка и альбом. Родитель выбирает точки ([plan], всегда в порядке маршрута),
+ * их можно пройти, пропустить или прервать прогулку. Найденные вещи ([found])
+ * остаются в альбоме между прогулками.
  */
-data class Journey(val stopCount: Int, val found: Int = 0, val started: Boolean = false) {
+data class Journey(
+    val stopCount: Int,
+    /** Выбранные точки текущей прогулки; пусто — прогулки нет. */
+    val plan: List<Int> = emptyList(),
+    /** Номер следующей цели внутри [plan]. */
+    val position: Int = 0,
+    /** Все вещи, найденные за все прогулки. */
+    val found: Set<Int> = emptySet(),
+    /** Вещи, найденные на текущей прогулке. */
+    val walkFound: Set<Int> = emptySet(),
+    /** Значок «Юный караванщик» — за прогулку, пройденную до конца хотя бы с одной находкой. */
+    val badge: Boolean = false
+) {
     init {
-        require(found in 0..stopCount) { "found=$found вне 0..$stopCount" }
+        require(plan.all { it in 0 until stopCount }) { "plan=$plan вне 0 until $stopCount" }
+        require(position in 0..plan.size) { "position=$position вне 0..${plan.size}" }
     }
 
-    val activeIndex: Int get() = found
-    val finished: Boolean get() = found == stopCount
+    val inProgress: Boolean get() = plan.isNotEmpty()
 
-    fun isFound(index: Int): Boolean = index < found
+    /** Все выбранные точки пройдены или пропущены. */
+    val walkComplete: Boolean get() = inProgress && position == plan.size
 
-    fun start(): Journey = copy(started = true)
+    /** Точка маршрута, к которой идём; null — идти некуда. */
+    val activeStop: Int? get() = plan.getOrNull(position)
 
-    /** Вещь на точке [index] найдена; повторное подтверждение ничего не меняет. */
-    fun collect(index: Int): Journey =
-        if (index == found && !finished) copy(found = found + 1, started = true) else this
+    /** Точка, от которой идём к [activeStop]; null — первая цель прогулки. */
+    val previousStop: Int? get() = plan.getOrNull(position - 1)
 
+    fun isFound(index: Int): Boolean = index in found
+
+    /** Новая прогулка по выбранным точкам (порядок — как в маршруте). */
+    fun start(selection: Collection<Int>): Journey {
+        val chosen = selection.filter { it in 0 until stopCount }.distinct().sorted()
+        require(chosen.isNotEmpty()) { "Нужно выбрать хотя бы одну точку" }
+        return copy(plan = chosen, position = 0, walkFound = emptySet())
+    }
+
+    /** Вещь на текущей точке найдена; другие точки не засчитываются. */
+    fun collect(index: Int): Journey {
+        if (index != activeStop) return this
+        val done = copy(found = found + index, walkFound = walkFound + index, position = position + 1)
+        return if (done.walkComplete) done.copy(badge = true) else done
+    }
+
+    /** Пропустить текущую точку и идти к следующей. Значок дают, если что-то найдено. */
+    fun skip(): Journey {
+        if (activeStop == null) return this
+        val next = copy(position = position + 1)
+        return if (next.walkComplete && next.walkFound.isNotEmpty()) next.copy(badge = true) else next
+    }
+
+    /** Закончить прогулку; найденное остаётся в альбоме. */
+    fun finish(): Journey = copy(plan = emptyList(), position = 0, walkFound = emptySet())
+
+    /** Очистить альбом и значок. */
     fun reset(): Journey = Journey(stopCount)
 }
 

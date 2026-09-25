@@ -63,12 +63,12 @@ class KaravanActivity : ComponentActivity() {
         )
         setContent {
             KaravanTheme {
-                KaravanApp(controller, onStartWalk = ::startWalk, map = hooks)
+                KaravanApp(controller, ensureLocation = ::ensureTracking, map = hooks)
             }
         }
     }
 
-    private fun startWalk() {
+    private fun ensureTracking() {
         if (tracker.hasPermission()) {
             startTracking()
         } else {
@@ -76,7 +76,6 @@ class KaravanActivity : ComponentActivity() {
                 arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION)
             )
         }
-        controller.startWalk()
     }
 
     private fun startTracking() {

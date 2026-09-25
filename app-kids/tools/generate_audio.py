@@ -88,6 +88,7 @@ def main():
     route = json.loads(ROUTE.read_text(encoding="utf-8"))
     OUT.mkdir(parents=True, exist_ok=True)
     say("intro_trosha", route["intro"]["trosha"], TROSHA)
+    say("finale_trosha", route["finale"]["trosha"], TROSHA)
     for key, text in route["phrases"].items():
         say(f"phrase_{key}", text, TROSHA)
     for n, stop in enumerate(route["stops"], start=1):

@@ -26,6 +26,8 @@ data class KidsRoute(
     val duration: String,
     val badge: String,
     val intro: String,
+    /** Троша прощается после прогулки, пройденной до конца. */
+    val finale: String,
     val stops: List<KidsStop>
 )
 
@@ -35,11 +37,13 @@ data class KidsRoute(
  */
 object Clips {
     const val INTRO = "intro_trosha"
+    const val FINALE = "finale_trosha"
     const val BELL = "bell"
     const val GO = "phrase_go"
     const val ARRIVED = "phrase_arrived"
     const val FOUND = "phrase_found"
     const val ROAD = "phrase_road"
+    const val LATER = "phrase_later"
 
     fun narrator(index: Int) = "stop${index + 1}_narrator"
     fun trosha(index: Int) = "stop${index + 1}_trosha"
@@ -66,6 +70,7 @@ object KidsRouteLoader {
             duration = json.optString("duration"),
             badge = json.getString("badge"),
             intro = json.getJSONObject("intro").getString("trosha"),
+            finale = json.optJSONObject("finale")?.optString("trosha").orEmpty(),
             stops = List(stops.length()) { i ->
                 val s = stops.getJSONObject(i)
                 KidsStop(

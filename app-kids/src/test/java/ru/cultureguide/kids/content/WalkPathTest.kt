@@ -1,6 +1,7 @@
 package ru.cultureguide.kids.content
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.LocationFix
@@ -43,6 +44,14 @@ class WalkPathTest {
     fun farFromThePathFallsBackToStraightLine() {
         val fix = LocationFix(54.003, 60.995)
         assertEquals(321.0, walkingMeters(path, fix, straightMeters = 321.0), 0.0)
+    }
+
+    @Test
+    fun planLengthSumsLegsBetweenChosenStops() {
+        val paths = RoutePaths(mapOf((0 to 2) to path, (2 to 4) to WalkPath(listOf(c, a))))
+        assertEquals(path.lengthMeters + WalkPath(listOf(c, a)).lengthMeters, paths.planMeters(listOf(0, 2, 4))!!, 0.01)
+        assertEquals(0.0, paths.planMeters(listOf(3))!!, 0.0)
+        assertNull(paths.planMeters(listOf(0, 1)))
     }
 
     @Test

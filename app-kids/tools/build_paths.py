@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Пешеходные линии маршрута «Маленького каравана» для assets/kids/paths.json.
 
-Для каждой пары соседних точек из assets/kids/route.json запрашивает пешеходный
+Для каждой пары точек из assets/kids/route.json (i < j) запрашивает пешеходный
 маршрут у OSRM (профиль foot, данные OpenStreetMap) и сохраняет геометрию.
-Приложение рисует эти линии без интернета и считает по ним оставшиеся шаги.
+Родитель может выбрать любые точки, а они проходятся в порядке маршрута, поэтому
+нужны линии между любыми двумя из них. Приложение рисует их без интернета
+и считает по ним оставшиеся шаги.
 
     python3 app-kids/tools/build_paths.py
 
@@ -72,15 +74,16 @@ def main():
     stops = [[places[s["place_id"]]["lon"], places[s["place_id"]]["lat"]] for s in route["stops"]]
 
     legs = []
-    for i in range(1, len(stops)):
-        start, end = stops[i - 1], stops[i]
-        points = build_leg(start, end, fetch_leg(start, end))
-        meters = length_m(points)
-        straight = distance_m(start, end)
-        print(f"участок {i}: {len(points)} точек, {meters:.0f} м пешком, {straight:.0f} м по прямой")
-        if meters > straight * 4:
-            raise SystemExit(f"участок {i} подозрительно длинный: {meters:.0f} м при {straight:.0f} м по прямой")
-        legs.append({"meters": round(meters), "points": points})
+    for i in range(len(stops)):
+        for j in range(i + 1, len(stops)):
+            start, end = stops[i], stops[j]
+            points = build_leg(start, end, fetch_leg(start, end))
+            meters = length_m(points)
+            straight = distance_m(start, end)
+            print(f"{i + 1} → {j + 1}: {len(points)} точек, {meters:.0f} м пешком, {straight:.0f} м по прямой")
+            if meters > straight * 4:
+                raise SystemExit(f"{i + 1} → {j + 1} подозрительно длинный: {meters:.0f} м при {straight:.0f} м по прямой")
+            legs.append({"from": i, "to": j, "meters": round(meters), "points": points})
 
     OUT.write_text(
         json.dumps(
@@ -95,7 +98,8 @@ def main():
         + "\n",
         encoding="utf-8",
     )
-    print(f"записано {OUT.relative_to(REPO)}: {len(legs)} участков, {sum(l['meters'] for l in legs)} м")
+    full = sum(l["meters"] for l in legs if l["to"] == l["from"] + 1)
+    print(f"записано {OUT.relative_to(REPO)}: {len(legs)} участков, весь маршрут {full} м")
 
 
 if __name__ == "__main__":

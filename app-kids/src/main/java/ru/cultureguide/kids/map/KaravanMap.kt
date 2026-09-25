@@ -41,32 +41,26 @@ import org.maplibre.geojson.Point
 import ru.cultureguide.kids.content.Journey
 import ru.cultureguide.kids.content.KidsStop
 import ru.cultureguide.kids.content.ON_PATH_METERS
-import ru.cultureguide.kids.content.WalkPath
+import ru.cultureguide.kids.content.RoutePaths
 import ru.cultureguide.model.Place
 import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.LocationFix
 
 /**
  * Карта прогулки на MapLibre с бесплатной подложкой OpenFreeMap (данные OpenStreetMap, без ключа).
- * Маршрут идёт по пешеходным линиям из [paths]: пройденные участки серые, текущий — сплошной,
- * следующие — пунктир. Если свернули с линии или идём к первой точке, от нас к цели тянется
- * синий пунктир. Найденные вещи показываются наклейками, ненайденные — знаком вопроса.
+ * Показываются только точки текущей прогулки, соединённые пешеходными линиями из [paths]:
+ * пройденные участки серые, текущий — сплошной, следующие — пунктир. Если свернули с линии
+ * или идём к первой точке, от нас к цели тянется синий пунктир. Найденные вещи показываются
+ * наклейками, ненайденные — знаком вопроса.
  * Без интернета подложка заменяется однотонным фоном, а маршрут и точки остаются на месте.
  */
 class KaravanMap(
     private val context: Context,
     private val stops: List<KidsStop>,
     private val places: List<Place>,
-    /** Пешеходные линии между точками; пусто — соединяем точки прямыми. */
-    private val paths: List<WalkPath>
+    /** Пешеходные линии между точками; где линии нет, соединяем точки прямой. */
+    private val paths: RoutePaths
 ) {
-    private val legs: List<List<GeoPoint>> =
-        if (paths.size == places.size - 1) {
-            paths.map { it.points }
-        } else {
-            places.zipWithNext { a, b -> listOf(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
-        }
-
     private var map: MapLibreMap? = null
     private var style: Style? = null
     private var journey: Journey? = null
@@ -108,8 +102,9 @@ class KaravanMap(
     /** Показать весь маршрут вместе с текущей позицией. */
     fun fitAll() {
         val m = map ?: return
-        val points = places.map { LatLng(it.lat, it.lon) } +
-            legs.flatten().map { LatLng(it.lat, it.lon) } +
+        val plan = journey?.plan.orEmpty()
+        val points = plan.map { LatLng(places[it].lat, places[it].lon) } +
+            legs(plan).flatten().map { LatLng(it.lat, it.lon) } +
             listOfNotNull(me?.let { LatLng(it.lat, it.lon) })
         if (points.size < 2) return
         m.animateCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.Builder().includes(points).build(), FIT_PADDING_PX))
@@ -186,11 +181,11 @@ class KaravanMap(
         val journey = journey ?: return
         s.getSourceAs<GeoJsonSource>(SRC_ROUTE)?.setGeoJson(
             FeatureCollection.fromFeatures(
-                legs.mapIndexed { k, leg ->
-                    // Участок k ведёт к точке k + 1.
+                legs(journey.plan).mapIndexed { k, leg ->
+                    // Участок k ведёт к точке plan[k + 1].
                     val state = when {
-                        journey.isFound(k + 1) -> STATE_DONE
-                        k + 1 == journey.activeIndex -> STATE_ACTIVE
+                        k + 1 < journey.position -> STATE_DONE
+                        k + 1 == journey.position -> STATE_ACTIVE
                         else -> STATE_NEXT
                     }
                     Feature.fromGeometry(lineOf(leg)).apply { addStringProperty(PROP_STATE, state) }
@@ -202,10 +197,11 @@ class KaravanMap(
         )
         s.getSourceAs<GeoJsonSource>(SRC_STOPS)?.setGeoJson(
             FeatureCollection.fromFeatures(
-                places.mapIndexed { i, place ->
+                journey.plan.map { i ->
+                    val place = places[i]
                     Feature.fromGeometry(Point.fromLngLat(place.lon, place.lat)).apply {
                         addStringProperty(PROP_ICON, if (journey.isFound(i)) stickerImage(stops[i].sticker) else IMG_MYSTERY)
-                        addNumberProperty(PROP_SIZE, if (i == journey.activeIndex) 1.0 else 0.75)
+                        addNumberProperty(PROP_SIZE, if (i == journey.activeStop) 1.0 else 0.75)
                     }
                 }
             )
@@ -222,13 +218,19 @@ class KaravanMap(
         }
     }
 
+    /** Линии между соседними точками прогулки; без пешеходной линии — прямая. */
+    private fun legs(plan: List<Int>): List<List<GeoPoint>> =
+        plan.zipWithNext { a, b ->
+            paths.between(a, b)?.points ?: listOf(GeoPoint(places[a].lat, places[a].lon), GeoPoint(places[b].lat, places[b].lon))
+        }
+
     /** Прямая от нас к цели — пока до пешеходной линии далеко или её нет. */
     private fun approach(journey: Journey): List<GeoPoint>? {
         val here = me ?: return null
-        if (journey.finished) return null
-        val path = paths.getOrNull(journey.activeIndex - 1)
+        val active = journey.activeStop ?: return null
+        val path = journey.previousStop?.let { paths.between(it, active) }
         if (path != null && path.progress(here).offPathMeters <= ON_PATH_METERS) return null
-        val target = places[journey.activeIndex]
+        val target = places[active]
         return listOf(GeoPoint(here.lat, here.lon), GeoPoint(target.lat, target.lon))
     }
 
