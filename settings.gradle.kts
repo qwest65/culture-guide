@@ -7,4 +7,4 @@ dependencyResolutionManagement {
     repositories { google(); mavenCentral() }
 }
 rootProject.name = "CultureGuide"
-include(":app")
+include(":core", ":app", ":app-kids")

@@ -78,20 +78,28 @@
 
 ## Архитектура
 
+В репозитории три Gradle-модуля: общий `:core` и два приложения, «Культурный гид» (`:app`) и «Маленький караван» (`:app-kids`).
+
 ```
-app/src/main/java/ru/cultureguide/
+core/src/main/                   общий код обоих приложений
+├── assets/catalog.json          каталог городов, объектов и маршрутов
+└── java/ru/cultureguide/
+    ├── model/Models.kt              City, Place, RouteLine
+    ├── data/CatalogDatabase.kt      SQLite и импорт assets/catalog.json
+    ├── location/LocationTracker.kt  подписка на GPS и сетевой провайдер
+    ├── navigation/GuidanceEngine.kt логика прибытия и переключения целей (чистый Kotlin, покрыт тестами)
+    ├── navigation/Geo.kt            расстояния и форматирование
+    └── audio/AudioGuide.kt          озвучка справок
+
+app/src/main/java/ru/cultureguide/   «Культурный гид»
 ├── MainActivity.kt              жизненный цикл, разрешения, MapKit, внешние ссылки
 ├── GuideController.kt           состояние приложения и сценарии: город, маршрут, остановки, ведение, поиск
 ├── CultureGuideApp.kt           инициализация ключа MapKit
-├── model/Models.kt              City, Place, RouteLine
-├── data/CatalogDatabase.kt      SQLite и импорт assets/catalog.json
-├── location/LocationTracker.kt  подписка на GPS и сетевой провайдер
 ├── map/MapController.kt         слои карты (объекты, маршрут, подход к цели, пользователь) и камера
 ├── map/WalkingRouteBuilder.kt   пешеходные участки PedestrianRouter с отменой устаревших запросов
-├── navigation/GuidanceEngine.kt логика прибытия и переключения целей (чистый Kotlin, покрыт тестами)
-├── navigation/Geo.kt            расстояния и форматирование
-├── audio/AudioGuide.kt          озвучка справок
 └── ui/                          Compose-экран и тема
+
+app-kids/                        «Маленький караван», см. раздел ниже
 ```
 
 **Как устроено ведение.** `LocationTracker` передаёт каждую новую координату в `GuideController`, а тот — в `GuidanceEngine`. Движок проверяет текущую цель и две следующие: если пользователь ближе 45 м к одной из них (а точность сигнала не хуже 80 м), цели до неё отмечаются пройденными. Контроллер обновляет метки и цвета участков на карте, запрашивает новую линию «от меня до цели» и запускает аудиогид.
@@ -114,13 +122,13 @@ export MAPKIT_API_KEY=ваш_ключ
 ./gradlew testDebugUnitTest assembleDebug
 ```
 
-Готовый APK: `app/build/outputs/apk/debug/app-debug.apk`. Установить на подключённое устройство: `./gradlew installDebug`.
+Готовые APK: `app/build/outputs/apk/debug/app-debug.apk` и `app-kids/build/outputs/apk/debug/app-kids-debug.apk`. Установить на подключённое устройство: `./gradlew :app:installDebug` или `./gradlew :app-kids:installDebug`. Ключ MapKit нужен только для `:app`.
 
 Проект открывается в Android Studio как обычный Gradle-проект. Ключ MapKit никогда не коммитится в репозиторий.
 
 ## Добавление городов и маршрутов
 
-Весь контент — это файл [`app/src/main/assets/catalog.json`](app/src/main/assets/catalog.json):
+Весь контент — это файл [`core/src/main/assets/catalog.json`](core/src/main/assets/catalog.json):
 
 ```jsonc
 {
@@ -138,18 +146,37 @@ export MAPKIT_API_KEY=ваш_ключ
 
 После повышения `revision` приложение при следующем запуске сольёт каталог с локальной базой. Совпадения ищутся по названию, поэтому описания обновятся, а новые объекты и маршруты добавятся.
 
+## Маленький караван
+
+> Приложение развивается в отдельной ветке [`karavan`](https://github.com/qwest65/culture-guide/tree/karavan) и публикуется только из неё. Ветка `dev` остаётся за «Культурным гидом».
+
+Отдельное приложение для детей 4–7 лет, которые гуляют по городу с родителями. Верблюжонок Троша — герой с герба Троицка — отстал от каравана и растерял по городу пять вещей. На каждой точке маршрута ребёнок слушает короткую сказку, находит вещь Троши, получает наклейку в альбом и выполняет задание. В конце он получает значок «Юный караванщик».
+
+Родитель сам выбирает, какие точки пройти сегодня: все пять или, например, три. Идут они всегда в порядке маршрута. Прогулку можно поставить на паузу, пропустить точку или завершить досрочно. Найденные вещи остаются в альбоме и копятся от прогулки к прогулке. Значок дают за прогулку, пройденную до конца.
+
+[⬇️ Скачать MalenkiyKaravan.apk](https://github.com/qwest65/culture-guide/releases/download/karavan/MalenkiyKaravan.apk)
+
+- **Карта:** [MapLibre](https://maplibre.org/) с бесплатной подложкой [OpenFreeMap](https://openfreemap.org/) (данные © OpenStreetMap). Ключ не нужен. Без интернета вместо подложки показывается однотонный фон, маршрут и точки остаются видны.
+- **Пешеходный маршрут:** линии между точками идут по тротуарам и пешеходным дорожкам. Их заранее строит [`app-kids/tools/build_paths.py`](app-kids/tools/build_paths.py) через OSRM (профиль foot, данные OpenStreetMap) для каждой пары точек, чтобы подошёл любой выбор, и сохраняет в `assets/kids/paths.json`, поэтому в пути интернет не нужен. Шаги до точки считаются вдоль линии. Если ребёнок свернул с неё дальше чем на 40 м или идёт к первой точке, приложение само запрашивает у OSRM пешеходный маршрут «от меня до точки» и рисует его синим пунктиром. Без интернета остаётся прямая. Нижнюю панель с шагами можно свернуть свайпом вниз, чтобы открыть карту. Workflow [`kids-paths.yml`](.github/workflows/kids-paths.yml) пересобирает линии при изменении маршрута или каталога в ветках `claude/**`, коммитит их и запускает сборку APK. Для других веток его можно запустить вручную (Run workflow).
+- **Прибытие на точку:** тот же `GuidanceEngine`, что и в «Культурном гиде», но точки засчитываются строго по порядку. Если GPS не справляется, есть кнопка «Мы на месте!».
+- **Озвучка:** заранее записанные файлы `assets/kids/audio/*.ogg` работают без интернета. Их создаёт [`app-kids/tools/generate_audio.py`](app-kids/tools/generate_audio.py) из текстов [`route.json`](app-kids/src/main/assets/kids/route.json) с голосами Piper «dmitri» (рассказчик) и «denis» (Троша). У обоих голосов лицензия CC0. После правки текстов запустите скрипт заново.
+- **Для взрослых:** на каждой точке есть подсказка и подробная историческая справка из общего каталога, её читает синтезатор речи.
+
 ## Релизы и CI/CD
 
 Workflow [`.github/workflows/android.yml`](.github/workflows/android.yml) запускается на каждый push:
 
 | Ветка | Что происходит |
 |---|---|
-| `dev` | тесты и сборка, затем GitHub Release `v<версия>` с единственным файлом `CultureGuide.apk` и `SHA256SUMS.txt`, помеченный как Latest |
-| `claude/**` | тесты и сборка, затем пред-релиз `preview` (не становится Latest) |
+| `dev` | тесты и сборка, затем GitHub Release `v<версия>` «Культурного гида» с единственным файлом `CultureGuide.apk` и `SHA256SUMS.txt`, помеченный как Latest |
+| `karavan` | тесты и сборка, затем релиз `karavan` «Маленького каравана» с `MalenkiyKaravan.apk` (не становится Latest) |
+| `claude/**` | тесты и сборка, затем пред-релиз `preview` с обоими APK (не становится Latest) |
 
 Постоянная ссылка на последнюю стабильную версию: https://github.com/qwest65/culture-guide/releases/latest/download/CultureGuide.apk. Номер версии указан в названии релиза и его теге, а не в имени файла.
 
-Чтобы выпустить новую версию, поднимите `versionName` и `versionCode` в [`app/build.gradle.kts`](app/build.gradle.kts) и влейте изменения в `dev`. Для работы CI в настройках репозитория нужен secret `MAPKIT_API_KEY`.
+Постоянная ссылка на «Маленький караван»: https://github.com/qwest65/culture-guide/releases/download/karavan/MalenkiyKaravan.apk. Релиз `karavan` пересоздаётся при каждой сборке из ветки `karavan`, поэтому ссылка всегда ведёт на свежую версию.
+
+Чтобы выпустить новую версию, поднимите `versionName` и `versionCode` в [`app/build.gradle.kts`](app/build.gradle.kts) и влейте изменения в `dev`. «Маленький караван» развивается в отдельной ветке `karavan`: поднимите версию в [`app-kids/build.gradle.kts`](app-kids/build.gradle.kts) и влейте изменения туда. Для работы CI в настройках репозитория нужен secret `MAPKIT_API_KEY`.
 
 ## Дорожная карта
 
