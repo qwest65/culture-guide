@@ -40,7 +40,6 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import ru.cultureguide.kids.content.Journey
 import ru.cultureguide.kids.content.KidsStop
-import ru.cultureguide.kids.content.ON_PATH_METERS
 import ru.cultureguide.kids.content.RoutePaths
 import ru.cultureguide.model.Place
 import ru.cultureguide.navigation.GeoPoint
@@ -50,7 +49,8 @@ import ru.cultureguide.navigation.LocationFix
  * Карта прогулки на MapLibre с бесплатной подложкой OpenFreeMap (данные OpenStreetMap, без ключа).
  * Показываются только точки текущей прогулки, соединённые пешеходными линиями из [paths]:
  * пройденные участки серые, текущий — сплошной, следующие — пунктир. Если свернули с линии
- * или идём к первой точке, от нас к цели тянется синий пунктир. Найденные вещи показываются
+ * или идём к первой точке, от нас к цели тянется синий пунктир — по улицам, если удалось
+ * получить маршрут (см. [ApproachRouter]), иначе по прямой. Найденные вещи показываются
  * наклейками, ненайденные — знаком вопроса.
  * Без интернета подложка заменяется однотонным фоном, а маршрут и точки остаются на месте.
  */
@@ -65,6 +65,7 @@ class KaravanMap(
     private var style: Style? = null
     private var journey: Journey? = null
     private var me: LocationFix? = null
+    private var approach: List<GeoPoint>? = null
     private var fitted = false
     private var offline = false
 
@@ -93,9 +94,10 @@ class KaravanMap(
         fitted = false
     }
 
-    fun update(journey: Journey, me: LocationFix?) {
+    fun update(journey: Journey, me: LocationFix?, approach: List<GeoPoint>?) {
         this.journey = journey
         this.me = me
+        this.approach = approach
         render()
     }
 
@@ -193,7 +195,7 @@ class KaravanMap(
             )
         )
         s.getSourceAs<GeoJsonSource>(SRC_APPROACH)?.setGeoJson(
-            FeatureCollection.fromFeatures(listOfNotNull(approach(journey)?.let { Feature.fromGeometry(lineOf(it)) }))
+            FeatureCollection.fromFeatures(listOfNotNull(approach?.takeIf { it.size >= 2 }?.let { Feature.fromGeometry(lineOf(it)) }))
         )
         s.getSourceAs<GeoJsonSource>(SRC_STOPS)?.setGeoJson(
             FeatureCollection.fromFeatures(
@@ -223,16 +225,6 @@ class KaravanMap(
         plan.zipWithNext { a, b ->
             paths.between(a, b)?.points ?: listOf(GeoPoint(places[a].lat, places[a].lon), GeoPoint(places[b].lat, places[b].lon))
         }
-
-    /** Прямая от нас к цели — пока до пешеходной линии далеко или её нет. */
-    private fun approach(journey: Journey): List<GeoPoint>? {
-        val here = me ?: return null
-        val active = journey.activeStop ?: return null
-        val path = journey.previousStop?.let { paths.between(it, active) }
-        if (path != null && path.progress(here).offPathMeters <= ON_PATH_METERS) return null
-        val target = places[active]
-        return listOf(GeoPoint(here.lat, here.lon), GeoPoint(target.lat, target.lon))
-    }
 
     private fun lineOf(points: List<GeoPoint>): LineString = LineString.fromLngLats(points.map { Point.fromLngLat(it.lon, it.lat) })
 

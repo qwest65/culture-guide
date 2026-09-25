@@ -2,6 +2,7 @@ package ru.cultureguide.kids
 
 import android.content.Context
 import android.location.Location
+import android.os.SystemClock
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
@@ -10,8 +11,12 @@ import ru.cultureguide.kids.audio.ClipPlayer
 import ru.cultureguide.kids.content.Clips
 import ru.cultureguide.kids.content.Journey
 import ru.cultureguide.kids.content.KidsRoute
+import ru.cultureguide.kids.content.ON_PATH_METERS
+import ru.cultureguide.kids.content.Reroute
 import ru.cultureguide.kids.content.RoutePaths
+import ru.cultureguide.kids.content.WalkPath
 import ru.cultureguide.kids.content.walkingMeters
+import ru.cultureguide.kids.map.ApproachRouter
 import ru.cultureguide.model.Place
 import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.GuidanceEngine
@@ -39,7 +44,8 @@ class KaravanController(
     /** Пешеходные линии между точками; без них расстояние считается по прямой. */
     val paths: RoutePaths,
     val player: ClipPlayer,
-    private val audioGuide: AudioGuide
+    private val audioGuide: AudioGuide,
+    private val router: ApproachRouter
 ) {
     private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     // Точки проходятся строго по порядку: засчитываем только текущую.
@@ -60,6 +66,17 @@ class KaravanController(
         private set
     var result by mutableStateOf<WalkResult?>(null)
         private set
+    /**
+     * Линия «от меня до точки», когда до пешеходных линий маршрута далеко: по улицам,
+     * если OSRM ответил, иначе прямая. null — идём по линии маршрута.
+     */
+    var approachLine by mutableStateOf<List<GeoPoint>?>(null)
+        private set
+
+    private var approachPath: WalkPath? = null
+    private var approachTarget: Int? = null
+    private var lastRouteRequestAt = Long.MIN_VALUE / 2
+    private var routeRequestInFlight = false
 
     val parentStoryPlaying: Boolean get() = audioGuide.speakingPlaceId == places.getOrNull(openedStop)?.id
 
@@ -126,10 +143,36 @@ class KaravanController(
             return
         }
         val update = engine.update(journey.plan.map { points[it] }, journey.position, fix)
-        // К первой точке прогулки линии нет — идём от того места, где стоим.
-        val path = journey.previousStop?.let { paths.between(it, target) }
-        distanceToTarget = update.distanceToTarget?.let { walkingMeters(path, fix, it) }
+        val straight = update.distanceToTarget ?: return
+        // К первой точке прогулки линии маршрута нет — идём от того места, где стоим.
+        val leg = journey.previousStop?.let { paths.between(it, target) }
+        if (leg != null && leg.progress(fix).offPathMeters <= ON_PATH_METERS) {
+            approachLine = null
+            distanceToTarget = walkingMeters(leg, fix, straight)
+        } else {
+            val approach = approachPath?.takeIf { approachTarget == target }
+            if (screen == Screen.Walk) requestApproach(fix, target, approach)
+            val onApproach = approach != null && approach.progress(fix).offPathMeters <= ON_PATH_METERS
+            approachLine = if (onApproach) approach!!.points else listOf(GeoPoint(fix.lat, fix.lon), points[target])
+            distanceToTarget = walkingMeters(approach, fix, straight)
+        }
         if (update.reached.isNotEmpty() && screen == Screen.Walk) arrive()
+    }
+
+    /** Просит у OSRM пешеходный путь до цели, если его нет или мы с него свернули. */
+    private fun requestApproach(fix: LocationFix, target: Int, current: WalkPath?) {
+        val now = SystemClock.elapsedRealtime()
+        if (routeRequestInFlight || !Reroute.needed(current, fix, now - lastRouteRequestAt)) return
+        routeRequestInFlight = true
+        lastRouteRequestAt = now
+        router.route(GeoPoint(fix.lat, fix.lon), points[target]) { line ->
+            routeRequestInFlight = false
+            if (line != null && journey.activeStop == target) {
+                approachPath = WalkPath(line)
+                approachTarget = target
+                location?.let(::updateGuidance)
+            }
+        }
     }
 
     /** Подошли к точке — по GPS или по кнопке «Мы на месте!». */
@@ -176,6 +219,7 @@ class KaravanController(
         result = WalkResult(complete, journey.walkFound.sorted())
         journey = journey.finish().also(::save)
         distanceToTarget = null
+        approachLine = null
         screen = Screen.Finale
         if (complete) player.play(Clips.BELL, Clips.FINALE) else player.play(Clips.LATER)
     }
@@ -217,6 +261,7 @@ class KaravanController(
     fun dispose() {
         player.stop()
         audioGuide.shutdown()
+        router.shutdown()
     }
 
     private fun loadJourney(): Journey {

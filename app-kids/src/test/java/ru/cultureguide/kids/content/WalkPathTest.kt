@@ -1,7 +1,9 @@
 package ru.cultureguide.kids.content
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.LocationFix
@@ -52,6 +54,16 @@ class WalkPathTest {
         assertEquals(path.lengthMeters + WalkPath(listOf(c, a)).lengthMeters, paths.planMeters(listOf(0, 2, 4))!!, 0.01)
         assertEquals(0.0, paths.planMeters(listOf(3))!!, 0.0)
         assertNull(paths.planMeters(listOf(0, 1)))
+    }
+
+    @Test
+    fun rerouteOnlyWhenNoPathOrOffItAndNotTooOften() {
+        val onPath = LocationFix(54.0005, 61.000)
+        val offPath = LocationFix(54.003, 60.995)
+        assertTrue(Reroute.needed(null, onPath, sinceLastMs = Long.MAX_VALUE))
+        assertFalse(Reroute.needed(null, onPath, sinceLastMs = 5_000))
+        assertFalse(Reroute.needed(path, onPath, sinceLastMs = Long.MAX_VALUE))
+        assertTrue(Reroute.needed(path, offPath, sinceLastMs = Long.MAX_VALUE))
     }
 
     @Test

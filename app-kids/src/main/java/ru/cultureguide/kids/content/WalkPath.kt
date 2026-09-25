@@ -73,3 +73,17 @@ class RoutePaths(private val legs: Map<Pair<Int, Int>, WalkPath>) {
         val EMPTY = RoutePaths(emptyMap())
     }
 }
+
+/** Когда просить новый маршрут «от меня до точки» — не чаще раза в [MIN_INTERVAL_MS]. */
+object Reroute {
+    const val MIN_INTERVAL_MS = 20_000L
+
+    /**
+     * @param current уже построенный путь к этой же цели; null — пути нет или он к другой точке.
+     * @param sinceLastMs сколько прошло с прошлого запроса.
+     */
+    fun needed(current: WalkPath?, fix: LocationFix, sinceLastMs: Long): Boolean {
+        if (sinceLastMs < MIN_INTERVAL_MS) return false
+        return current == null || current.progress(fix).offPathMeters > ON_PATH_METERS
+    }
+}

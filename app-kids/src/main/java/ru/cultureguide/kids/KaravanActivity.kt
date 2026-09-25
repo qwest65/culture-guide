@@ -15,6 +15,7 @@ import ru.cultureguide.data.CatalogDatabase
 import ru.cultureguide.kids.audio.ClipPlayer
 import ru.cultureguide.kids.content.KidsPathsLoader
 import ru.cultureguide.kids.content.KidsRouteLoader
+import ru.cultureguide.kids.map.ApproachRouter
 import ru.cultureguide.kids.map.KaravanMap
 import ru.cultureguide.kids.ui.KaravanApp
 import ru.cultureguide.kids.ui.KaravanTheme
@@ -51,7 +52,7 @@ class KaravanActivity : ComponentActivity() {
 
         val paths = KidsPathsLoader.load(this, route)
 
-        controller = KaravanController(this, route, places, paths, ClipPlayer(this), AudioGuide(this))
+        controller = KaravanController(this, route, places, paths, ClipPlayer(this), AudioGuide(this), ApproachRouter())
         karavanMap = KaravanMap(this, route.stops, places, paths)
         tracker = LocationTracker(this, controller::onLocation)
 

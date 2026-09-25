@@ -2,6 +2,7 @@ package ru.cultureguide.kids.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloat
@@ -13,10 +14,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.scaleIn
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.Orientation
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -48,6 +53,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -67,6 +73,7 @@ import ru.cultureguide.kids.content.Clips
 import ru.cultureguide.kids.content.Journey
 import ru.cultureguide.kids.content.kidSteps
 import ru.cultureguide.kids.content.stepsWord
+import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.LocationFix
 import ru.cultureguide.navigation.formatDistance
 
@@ -74,7 +81,7 @@ import ru.cultureguide.navigation.formatDistance
 class MapHooks(
     val onCreated: (MapView) -> Unit,
     val onReleased: (MapView) -> Unit,
-    val onUpdate: (Journey, LocationFix?) -> Unit,
+    val onUpdate: (Journey, LocationFix?, List<GeoPoint>?) -> Unit,
     val onFitAll: () -> Unit
 )
 
@@ -252,6 +259,7 @@ private fun WalkScreen(c: KaravanController, map: MapHooks) {
     val stop = c.route.stops[active]
     val distance = c.distanceToTarget
     var confirmFinish by remember { mutableStateOf(false) }
+    var panelExpanded by rememberSaveable { mutableStateOf(true) }
 
     // Во время прогулки экран не гаснет: иначе остановится геолокация и Троша не узнает, что мы пришли.
     val view = LocalView.current
@@ -259,7 +267,7 @@ private fun WalkScreen(c: KaravanController, map: MapHooks) {
         view.keepScreenOn = true
         onDispose { view.keepScreenOn = false }
     }
-    LaunchedEffect(journey, c.location) { map.onUpdate(journey, c.location) }
+    LaunchedEffect(journey, c.location, c.approachLine) { map.onUpdate(journey, c.location, c.approachLine) }
 
     Box(Modifier.fillMaxSize()) {
         AndroidView(
@@ -274,14 +282,20 @@ private fun WalkScreen(c: KaravanController, map: MapHooks) {
             PillButton("⏸ Пауза", c::pause)
             RoundButton("⤢", map.onFitAll)
         }
-        Column(
-            Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(Karavan.Card, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
-                .navigationBarsPadding()
-                .padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+        WalkPanel(
+            expanded = panelExpanded,
+            onExpandedChange = { panelExpanded = it },
+            modifier = Modifier.align(Alignment.BottomCenter),
+            summary = {
+                Text(
+                    distance?.let { "≈ ${kidSteps(it)} ${stepsWord(kidSteps(it))}" } ?: "Ищем, где мы…",
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.Black,
+                    color = if (distance != null) Karavan.Red else Karavan.Muted,
+                    modifier = Modifier.weight(1f)
+                )
+                RoundButton("🔔", c::arrive)
+            }
         ) {
             PlanRow(c)
             Text(
@@ -312,6 +326,56 @@ private fun WalkScreen(c: KaravanController, map: MapHooks) {
         FinishDialog(onConfirm = { confirmFinish = false; c.finishWalk() }, onDismiss = { confirmFinish = false })
     }
 }
+
+/**
+ * Нижняя панель прогулки. Свайп вниз (или нажатие на полоску) сворачивает её до одной строки
+ * с шагами и колокольчиком, чтобы открыть карту; свайп вверх разворачивает обратно.
+ */
+@Composable
+private fun WalkPanel(
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
+    modifier: Modifier = Modifier,
+    summary: @Composable RowScope.() -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    var drag by remember { mutableStateOf(0f) }
+    Column(
+        modifier
+            .fillMaxWidth()
+            .background(Karavan.Card, RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp))
+            .draggable(
+                orientation = Orientation.Vertical,
+                state = rememberDraggableState { delta -> drag += delta },
+                onDragStarted = { drag = 0f },
+                onDragStopped = {
+                    if (drag > SWIPE_PX) onExpandedChange(false) else if (drag < -SWIPE_PX) onExpandedChange(true)
+                    drag = 0f
+                }
+            )
+            .navigationBarsPadding()
+            .animateContentSize()
+            .padding(start = 20.dp, end = 20.dp, bottom = 16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .clickable { onExpandedChange(!expanded) }
+                .padding(vertical = 10.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(Modifier.size(width = 48.dp, height = 5.dp).background(Karavan.Muted.copy(alpha = 0.5f), RoundedCornerShape(3.dp)))
+        }
+        if (expanded) {
+            content()
+        } else {
+            Row(verticalAlignment = Alignment.CenterVertically, content = summary)
+        }
+    }
+}
+
+private const val SWIPE_PX = 40f
 
 @Composable
 private fun FinishDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
