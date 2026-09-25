@@ -299,7 +299,7 @@ private fun WalkScreen(c: KaravanController, map: MapHooks) {
             }
             Text("🤝 Держи взрослого за руку", fontSize = 16.sp, color = Karavan.Ink)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                RoundButton("🔊") { c.player.play(Clips.GO) }
+                RoundButton(if (c.speaking) "⏹" else "🔊", c::toggleWalkHint)
                 BigButton("🔔 Мы на месте!", Modifier.weight(1f), onClick = c::arrive)
             }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -372,7 +372,7 @@ private fun StopScreen(c: KaravanController) {
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-            RoundButton("🔊", c::replayStop)
+            RoundButton(if (c.speaking) "⏹" else "🔊", c::toggleStopStory)
             BigButton(if (last) "Ура! Завершить прогулку" else "Готово! Идём дальше", Modifier.weight(1f), onClick = c::completeStop)
         }
     }

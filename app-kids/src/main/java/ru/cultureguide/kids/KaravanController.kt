@@ -141,9 +141,21 @@ class KaravanController(
         player.play(Clips.arrival(stop))
     }
 
-    fun replayStop() {
+    val speaking: Boolean get() = player.playing != null
+
+    /** Кнопка динамика на экране точки: остановить озвучку или послушать рассказ ещё раз. */
+    fun toggleStopStory() {
         audioGuide.stop()
-        player.play(Clips.narrator(openedStop), Clips.trosha(openedStop), Clips.task(openedStop))
+        if (speaking) {
+            player.stop()
+        } else {
+            player.play(Clips.narrator(openedStop), Clips.trosha(openedStop), Clips.task(openedStop))
+        }
+    }
+
+    /** Кнопка динамика на карте: остановить озвучку или ещё раз позвать за собой. */
+    fun toggleWalkHint() {
+        if (speaking) player.stop() else player.play(Clips.GO)
     }
 
     /** Задание выполнено: вещь Троши попадает в альбом, идём дальше. */
