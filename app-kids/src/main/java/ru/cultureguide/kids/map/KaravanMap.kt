@@ -29,6 +29,8 @@ import org.maplibre.android.style.layers.PropertyFactory.iconSize
 import org.maplibre.android.style.layers.PropertyFactory.lineCap
 import org.maplibre.android.style.layers.PropertyFactory.lineColor
 import org.maplibre.android.style.layers.PropertyFactory.lineDasharray
+import org.maplibre.android.style.layers.PropertyFactory.lineJoin
+import org.maplibre.android.style.layers.PropertyFactory.lineOpacity
 import org.maplibre.android.style.layers.PropertyFactory.lineWidth
 import org.maplibre.android.style.layers.SymbolLayer
 import org.maplibre.android.style.sources.GeoJsonSource
@@ -38,19 +40,33 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.Point
 import ru.cultureguide.kids.content.Journey
 import ru.cultureguide.kids.content.KidsStop
+import ru.cultureguide.kids.content.ON_PATH_METERS
+import ru.cultureguide.kids.content.WalkPath
 import ru.cultureguide.model.Place
+import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.LocationFix
 
 /**
  * Карта прогулки на MapLibre с бесплатной подложкой OpenFreeMap (данные OpenStreetMap, без ключа).
- * Найденные вещи показываются наклейками, ненайденные — знаком вопроса, чтобы сохранить сюрприз.
+ * Маршрут идёт по пешеходным линиям из [paths]: пройденные участки серые, текущий — сплошной,
+ * следующие — пунктир. Если свернули с линии или идём к первой точке, от нас к цели тянется
+ * синий пунктир. Найденные вещи показываются наклейками, ненайденные — знаком вопроса.
  * Без интернета подложка заменяется однотонным фоном, а маршрут и точки остаются на месте.
  */
 class KaravanMap(
     private val context: Context,
     private val stops: List<KidsStop>,
-    private val places: List<Place>
+    private val places: List<Place>,
+    /** Пешеходные линии между точками; пусто — соединяем точки прямыми. */
+    private val paths: List<WalkPath>
 ) {
+    private val legs: List<List<GeoPoint>> =
+        if (paths.size == places.size - 1) {
+            paths.map { it.points }
+        } else {
+            places.zipWithNext { a, b -> listOf(GeoPoint(a.lat, a.lon), GeoPoint(b.lat, b.lon)) }
+        }
+
     private var map: MapLibreMap? = null
     private var style: Style? = null
     private var journey: Journey? = null
@@ -92,7 +108,9 @@ class KaravanMap(
     /** Показать весь маршрут вместе с текущей позицией. */
     fun fitAll() {
         val m = map ?: return
-        val points = places.map { LatLng(it.lat, it.lon) } + listOfNotNull(me?.let { LatLng(it.lat, it.lon) })
+        val points = places.map { LatLng(it.lat, it.lon) } +
+            legs.flatten().map { LatLng(it.lat, it.lon) } +
+            listOfNotNull(me?.let { LatLng(it.lat, it.lon) })
         if (points.size < 2) return
         m.animateCamera(CameraUpdateFactory.newLatLngBounds(LatLngBounds.Builder().includes(points).build(), FIT_PADDING_PX))
     }
@@ -101,14 +119,35 @@ class KaravanMap(
         style = loaded
         addImages(loaded)
         loaded.addSource(GeoJsonSource(SRC_ROUTE))
+        loaded.addSource(GeoJsonSource(SRC_APPROACH))
         loaded.addSource(GeoJsonSource(SRC_STOPS))
         loaded.addSource(GeoJsonSource(SRC_ME))
         loaded.addLayer(
-            LineLayer(LAYER_ROUTE, SRC_ROUTE).withProperties(
+            routeLayer(LAYER_ROUTE_DONE, STATE_DONE).withProperties(
+                lineColor(DONE_COLOR),
+                lineWidth(5f)
+            )
+        )
+        loaded.addLayer(
+            routeLayer(LAYER_ROUTE_NEXT, STATE_NEXT).withProperties(
                 lineColor(ROUTE_COLOR),
-                lineWidth(5f),
-                lineCap(Property.LINE_CAP_ROUND),
+                lineWidth(4f),
+                lineOpacity(0.6f),
                 lineDasharray(arrayOf(1.5f, 1.5f))
+            )
+        )
+        loaded.addLayer(
+            routeLayer(LAYER_ROUTE_ACTIVE, STATE_ACTIVE).withProperties(
+                lineColor(ROUTE_COLOR),
+                lineWidth(7f)
+            )
+        )
+        loaded.addLayer(
+            LineLayer(LAYER_APPROACH, SRC_APPROACH).withProperties(
+                lineColor(ME_COLOR),
+                lineWidth(4f),
+                lineCap(Property.LINE_CAP_ROUND),
+                lineDasharray(arrayOf(0.5f, 2f))
             )
         )
         loaded.addLayer(
@@ -137,11 +176,29 @@ class KaravanMap(
         render()
     }
 
+    private fun routeLayer(id: String, state: String): LineLayer =
+        LineLayer(id, SRC_ROUTE)
+            .withFilter(Expression.eq(Expression.get(PROP_STATE), state))
+            .withProperties(lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND))
+
     private fun render() {
         val s = style ?: return
         val journey = journey ?: return
         s.getSourceAs<GeoJsonSource>(SRC_ROUTE)?.setGeoJson(
-            LineString.fromLngLats(places.map { Point.fromLngLat(it.lon, it.lat) })
+            FeatureCollection.fromFeatures(
+                legs.mapIndexed { k, leg ->
+                    // Участок k ведёт к точке k + 1.
+                    val state = when {
+                        journey.isFound(k + 1) -> STATE_DONE
+                        k + 1 == journey.activeIndex -> STATE_ACTIVE
+                        else -> STATE_NEXT
+                    }
+                    Feature.fromGeometry(lineOf(leg)).apply { addStringProperty(PROP_STATE, state) }
+                }
+            )
+        )
+        s.getSourceAs<GeoJsonSource>(SRC_APPROACH)?.setGeoJson(
+            FeatureCollection.fromFeatures(listOfNotNull(approach(journey)?.let { Feature.fromGeometry(lineOf(it)) }))
         )
         s.getSourceAs<GeoJsonSource>(SRC_STOPS)?.setGeoJson(
             FeatureCollection.fromFeatures(
@@ -164,6 +221,18 @@ class KaravanMap(
             fitAll()
         }
     }
+
+    /** Прямая от нас к цели — пока до пешеходной линии далеко или её нет. */
+    private fun approach(journey: Journey): List<GeoPoint>? {
+        val here = me ?: return null
+        if (journey.finished) return null
+        val path = paths.getOrNull(journey.activeIndex - 1)
+        if (path != null && path.progress(here).offPathMeters <= ON_PATH_METERS) return null
+        val target = places[journey.activeIndex]
+        return listOf(GeoPoint(here.lat, here.lon), GeoPoint(target.lat, target.lon))
+    }
+
+    private fun lineOf(points: List<GeoPoint>): LineString = LineString.fromLngLats(points.map { Point.fromLngLat(it.lon, it.lat) })
 
     private fun addImages(s: Style) {
         stops.map { it.sticker }.distinct().forEach { name ->
@@ -205,19 +274,28 @@ class KaravanMap(
             """{"version":8,"sources":{},"layers":[{"id":"bg","type":"background","paint":{"background-color":"#F3E6CC"}}]}"""
 
         const val SRC_ROUTE = "karavan-route"
+        const val SRC_APPROACH = "karavan-approach"
         const val SRC_STOPS = "karavan-stops"
         const val SRC_ME = "karavan-me"
-        const val LAYER_ROUTE = "karavan-route-line"
+        const val LAYER_ROUTE_DONE = "karavan-route-done"
+        const val LAYER_ROUTE_NEXT = "karavan-route-next"
+        const val LAYER_ROUTE_ACTIVE = "karavan-route-active"
+        const val LAYER_APPROACH = "karavan-approach-line"
         const val LAYER_STOPS = "karavan-stops-icons"
         const val LAYER_ME = "karavan-me-dot"
         const val LAYER_ME_HALO = "karavan-me-halo"
         const val PROP_ICON = "icon"
         const val PROP_SIZE = "size"
+        const val PROP_STATE = "state"
+        const val STATE_DONE = "done"
+        const val STATE_ACTIVE = "active"
+        const val STATE_NEXT = "next"
         const val IMG_MYSTERY = "mystery"
 
         const val ICON_PX = 132
         const val FIT_PADDING_PX = 120
         val ROUTE_COLOR = Color.rgb(0xD2, 0x46, 0x3C)
         val ME_COLOR = Color.rgb(0x2F, 0x6F, 0xB5)
+        val DONE_COLOR = Color.rgb(0xB5, 0xA8, 0x96)
     }
 }

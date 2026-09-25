@@ -10,6 +10,8 @@ import ru.cultureguide.kids.audio.ClipPlayer
 import ru.cultureguide.kids.content.Clips
 import ru.cultureguide.kids.content.Journey
 import ru.cultureguide.kids.content.KidsRoute
+import ru.cultureguide.kids.content.WalkPath
+import ru.cultureguide.kids.content.walkingMeters
 import ru.cultureguide.model.Place
 import ru.cultureguide.navigation.GeoPoint
 import ru.cultureguide.navigation.GuidanceEngine
@@ -26,6 +28,8 @@ class KaravanController(
     val route: KidsRoute,
     /** Объекты общего каталога для точек маршрута, в порядке [KidsRoute.stops]. */
     val places: List<Place>,
+    /** Пешеходные линии между точками; пусто — считаем расстояние по прямой. */
+    val paths: List<WalkPath>,
     val player: ClipPlayer,
     private val audioGuide: AudioGuide
 ) {
@@ -43,9 +47,12 @@ class KaravanController(
         private set
     var location by mutableStateOf<LocationFix?>(null)
         private set
-    /** Расстояние по прямой до следующей точки, м; null — позиция неизвестна. */
+    /** Сколько идти до следующей точки, м; null — позиция неизвестна. */
     var distanceToTarget by mutableStateOf<Double?>(null)
         private set
+
+    /** Длина всего маршрута по пешеходным линиям, м; null — линий нет. */
+    val routeMeters: Double? = paths.takeIf { it.size == places.size - 1 }?.sumOf { it.lengthMeters }
 
     val parentStoryPlaying: Boolean get() = audioGuide.speakingPlaceId == places.getOrNull(openedStop)?.id
 
@@ -77,7 +84,8 @@ class KaravanController(
             return
         }
         val update = engine.update(points, journey.activeIndex, fix)
-        distanceToTarget = update.distanceToTarget
+        // К точке i ведёт линия i - 1; к первой точке линии нет — идём от того места, где стоим.
+        distanceToTarget = update.distanceToTarget?.let { walkingMeters(paths.getOrNull(journey.activeIndex - 1), fix, it) }
         if (update.reached.isNotEmpty() && screen == Screen.Walk) arrive()
     }
 

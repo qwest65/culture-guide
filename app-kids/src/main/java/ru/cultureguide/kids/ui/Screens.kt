@@ -108,7 +108,11 @@ private fun HomeScreen(c: KaravanController, onStartWalk: () -> Unit) {
             Text(c.route.title, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Karavan.Ink)
             Text(c.route.subtitle, fontSize = 17.sp, color = Karavan.Ink)
             Text(
-                "${c.route.stops.size} ${pointsWord(c.route.stops.size)} · ${c.route.duration}",
+                listOfNotNull(
+                    "${c.route.stops.size} ${pointsWord(c.route.stops.size)}",
+                    c.routeMeters?.let { "${formatDistance(it)} пешком" },
+                    c.route.duration
+                ).joinToString(" · "),
                 fontSize = 15.sp,
                 color = Karavan.Muted
             )
@@ -185,7 +189,7 @@ private fun WalkScreen(c: KaravanController, map: MapHooks) {
             if (distance != null) {
                 val steps = kidSteps(distance)
                 Text("≈ $steps ${stepsWord(steps)}", fontSize = 32.sp, fontWeight = FontWeight.Black, color = Karavan.Red)
-                Text("${formatDistance(distance)} по прямой", fontSize = 14.sp, color = Karavan.Muted)
+                Text("${formatDistance(distance)} для взрослых", fontSize = 14.sp, color = Karavan.Muted)
             } else {
                 Text("Ищем, где мы…", fontSize = 20.sp, color = Karavan.Muted)
             }

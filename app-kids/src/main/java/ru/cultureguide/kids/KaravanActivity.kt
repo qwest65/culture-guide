@@ -13,6 +13,7 @@ import org.maplibre.android.maps.MapView
 import ru.cultureguide.audio.AudioGuide
 import ru.cultureguide.data.CatalogDatabase
 import ru.cultureguide.kids.audio.ClipPlayer
+import ru.cultureguide.kids.content.KidsPathsLoader
 import ru.cultureguide.kids.content.KidsRouteLoader
 import ru.cultureguide.kids.map.KaravanMap
 import ru.cultureguide.kids.ui.KaravanApp
@@ -48,8 +49,10 @@ class KaravanActivity : ComponentActivity() {
             checkNotNull(byId[stop.placeId]) { "В каталоге нет объекта ${stop.placeId} для точки «${stop.title}»" }
         }
 
-        controller = KaravanController(this, route, places, ClipPlayer(this), AudioGuide(this))
-        karavanMap = KaravanMap(this, route.stops, places)
+        val paths = KidsPathsLoader.load(this, route)
+
+        controller = KaravanController(this, route, places, paths, ClipPlayer(this), AudioGuide(this))
+        karavanMap = KaravanMap(this, route.stops, places, paths)
         tracker = LocationTracker(this, controller::onLocation)
 
         val hooks = MapHooks(
